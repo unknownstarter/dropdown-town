@@ -29,6 +29,7 @@
     background:rgba(20,16,30,.82); border-radius:3px; max-width:calc(55px * var(--s)); overflow:hidden; text-overflow:ellipsis; }
   .tag i { font-style:normal; color:var(--work); margin-right:4px; }
   .tag.sel { outline:2px solid var(--work); }
+  .tag.mini { font-size:9px; padding:0 3px; max-width:calc(36px * var(--s)); }
   .bubble { position:absolute; transform:translate(-50%,-100%); width:max-content; max-width:calc(60px * var(--s)); font-size:11px; line-height:1.35;
     background:#fffdf6; color:#2a2233; border:2px solid #2a2233; border-radius:6px; padding:3px 6px; }
   .bubble span { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
@@ -51,6 +52,13 @@
   .cmds div { display:grid; grid-template-columns:1fr auto; gap:2px 8px; margin-bottom:8px; align-items:center; }
   .cmds span { grid-column:1 / 3; color:var(--dim); font-size:11px; }
   .cmds code { background:var(--bg); border:2px solid var(--line); border-radius:4px; padding:3px 6px; font-family:inherit; user-select:all; }
+  .rrow { display:flex; gap:10px; align-items:center; padding:6px; border:2px solid transparent; border-radius:4px; cursor:pointer; }
+  .rrow:hover { border-color:var(--work); background:var(--bg); }
+  .rrow b { font-weight:normal; display:block; } .rrow small, .tasks small { display:block; color:var(--dim); font-size:11px; line-height:1.5; } .rrow small.on { color:var(--work); }
+  .rhead { display:flex; gap:12px; align-items:center; margin:10px 0 12px; }
+  .rsel { width:100%; font:inherit; color:var(--ink); background:var(--bg); border:2px solid var(--line); border-radius:4px; padding:4px 6px; margin-bottom:8px; }
+  .tasks { margin:0; padding-left:16px; } .tasks li { margin-bottom:8px; line-height:1.45; }
+  #rBack { margin-bottom:4px; }
   .ask { margin-top:10px; background:var(--bg); border:2px solid var(--line); border-radius:4px; padding:8px; max-height:220px; overflow:auto; white-space:pre-wrap; word-break:break-word; line-height:1.5; font-size:12px; }
   .ask.help { border-color:var(--help); }
   .hint { color:var(--dim); font-size:11px; line-height:1.5; margin:8px 0 0; }
@@ -78,6 +86,7 @@
   <div class="chip rest">쉬는 중 <b id="nRest">0</b></div>
   <div class="grow"></div>
   <span id="clock"></span>
+  <button id="rosterBtn">직원 명부</button>
   <button id="newBtn">+ 새 세션</button>
   <button id="style">캐릭터: 도트</button>
   <button id="sound">알림음 꺼짐</button>
@@ -172,7 +181,12 @@ function defaultLook(s) {
 function loadLook(s) {
   try { return { ...defaultLook(s), ...JSON.parse(localStorage.getItem('town.look.' + s.id) || '{}') } } catch { return defaultLook(s) }
 }
-function saveLook(e) { try { localStorage.setItem('town.look.' + e.id, JSON.stringify(e.look)) } catch {} }
+// 생김새는 열쇠마다 하나만 만들어 같이 쓴다. 세션은 세션 id, 서브에이전트는 'agent:직군 이름' 이 열쇠라서
+// 같은 직군은 언제 어느 세션에 불려 와도 같은 얼굴이고, 명부에서 꾸미면 사무실 캐릭터도 같이 바뀐다.
+const looks = new Map(), sheets = new WeakMap()
+function lookFor(key, s) { if (!looks.has(key)) looks.set(key, loadLook({ ...s, id: key })); return looks.get(key) }
+function saveLook(key) { sheets.delete(looks.get(key)); try { localStorage.setItem('town.look.' + key, JSON.stringify(looks.get(key))) } catch {} }
+function resetLook(key, s) { sheets.delete(looks.get(key)); Object.assign(looks.get(key), defaultLook({ ...s, id: key })); saveLook(key) }
 
 function drawChar(c, x, y, look, pose, t, seed) {
   const f2 = Math.floor(t / 180 + seed) % 2, s2 = Math.floor(t / 600 + seed) % 2
@@ -236,14 +250,15 @@ Promise.all(SPRITE_FILES.map((name) => new Promise((ok, fail) => {
 }))).then(() => { spritesReady = true }).catch(() => {}) // 에셋이 없으면 기본 캐릭터로 그린다
 const useSprites = () => style === 'sprite' && spritesReady
 
-function sheetOf(e) { // 몸 + 머리 + 옷을 한 줄짜리 시트로 미리 합쳐 둔다
-  if (e.sheet) return e.sheet
+function sheetOf(look) { // 몸 + 머리 + 옷을 한 줄짜리 시트로 미리 합쳐 둔다
+  if (sheets.has(look)) return sheets.get(look)
   const cvs = document.createElement('canvas'); cvs.width = 768; cvs.height = 32
-  const c = cvs.getContext('2d'), outfit = OUTFITS[e.look.outfit] || OUTFITS[0], hair = HAIRSTYLES[e.look.hairStyle]
-  c.drawImage(sprites.model, 0, (e.look.body % 6) * 32, 768, 32, 0, 0, 768, 32)
+  const c = cvs.getContext('2d'), outfit = OUTFITS[look.outfit] || OUTFITS[0], hair = HAIRSTYLES[look.hairStyle]
+  c.drawImage(sprites.model, 0, (look.body % 6) * 32, 768, 32, 0, 0, 768, 32)
   if (hair && !outfit.hat) c.drawImage(sprites[hair.src], 0, hair.row * 32, 768, 32, 0, 0, 768, 32)
   c.drawImage(sprites[outfit.src], 0, outfit.row * 32, 768, 32, 0, 0, 768, 32)
-  return (e.sheet = cvs)
+  sheets.set(look, cvs)
+  return cvs
 }
 const SPRITE_RISE = 12 // 도트 캐릭터는 기본 캐릭터보다 12px 크다
 function drawSprite(c, e, pose, t, sink) {
@@ -255,7 +270,7 @@ function drawSprite(c, e, pose, t, sink) {
   if (pose === 'alert' && Math.floor(t / 180) % 2) dy -= 2
   if ((pose === 'type' || pose === 'assist') && Math.floor(t / 600 + e.seed) % 2) dy += 1
   R(c, e.x + 1, e.y + 15 + sink, 10, 2, 'rgba(0,0,0,.22)')
-  c.drawImage(sheetOf(e), frame * 32, 0, 32, 32, Math.round(e.x) - 10, Math.round(dy), 32, 32)
+  c.drawImage(sheetOf(e.look), frame * 32, 0, 32, 32, Math.round(e.x) - 10, Math.round(dy), 32, 32)
   if (pose === 'coffee' && face === 'down') { R(c, e.x + 12, e.y + 4, 3, 3, '#ffffff'); R(c, e.x + 12, e.y + 4, 3, 1, '#6b4226'); R(c, e.x + 13, e.y + 1 - (Math.floor(t / 600) % 2), 1, 2, 'rgba(255,255,255,.7)') }
   if (e.look.acc === 'crown') { const y = dy + 1; R(c, e.x + 3, y, 6, 2, '#f5c542'); R(c, e.x + 3, y - 1, 1, 1, '#f5c542'); R(c, e.x + 5, y - 1, 2, 1, '#f5c542'); R(c, e.x + 8, y - 1, 1, 1, '#f5c542') }
 }
@@ -491,7 +506,7 @@ let firstLoad = true, selected = null, hovered = null
 const entsIn = (zone) => { let n = 0; for (const e of ents.values()) if (e.zone === zone) n++; return n }
 
 function makeEnt(s) {
-  const e = { id: s.id, data: s, zone: null, slot: -1, x: DOOR.x, y: DOOR.y, path: [], spot: DOOR, look: loadLook(s), seed: hash(s.id) % 97, dir: 'down', sheet: null }
+  const e = { id: s.id, data: s, zone: null, slot: -1, x: DOOR.x, y: DOOR.y, path: [], spot: DOOR, lookKey: s.lookKey || s.id, look: lookFor(s.lookKey || s.id, s.lookKey ? { kind: s.role ? 'role' : 'sub' } : s), seed: hash(s.id) % 97, dir: 'down' }
   e.tag = document.createElement('div'); e.tag.className = 'tag'
   e.bubble = document.createElement('div'); e.bubble.className = 'bubble'
   labels.append(e.tag, e.bubble)
@@ -520,7 +535,8 @@ const isSub = (e) => e.data.kind === 'sub'
 function refreshLabels(e) {
   const s = e.data, name = e.look.nick || s.name
   const extra = !isSub(e) && s.subagents.length > 2 ? ` +${s.subagents.length - 2}` : ''
-  e.tag.innerHTML = isSub(e) ? `<i>조수</i>${esc(name)}` : `<i>Lv.${level(s.tokens)}</i>${esc(name)}${extra}`
+  e.tag.classList.toggle('mini', isSub(e))
+  e.tag.innerHTML = isSub(e) ? `${s.role ? '' : '<i>조수</i>'}${esc(name)}` : `<i>Lv.${level(s.tokens)}</i>${esc(name)}${extra}`
   e.tag.classList.toggle('sel', selected === e.id)
   let html = ''
   if (e.zone === 'work') { const tk = s.phase === 'tool' ? toolKo(s.tool) : s.phase === 'thinking' ? '생각 중' : ''; html = (tk ? `<em>[${esc(tk)}]</em> ` : '') + esc(s.detail || '') }
@@ -548,7 +564,8 @@ function sync(list) {
     refreshLabels(e)
     // 서브에이전트는 작업모를 쓴 조수로 등장한다(책상 옆 자리가 둘뿐이라 둘까지만 그리고, 나머지는 이름표에 +N)
     s.subagents.slice(0, 2).forEach((a, k) => {
-      const id = 'sub-' + a.id, data = { id, kind: 'sub', name: a.type, parent: s.id, description: a.description, updatedAt: a.at, tokens: 0, subagents: [] }
+      const role = agentIndex.get(a.type)?.scope !== 'builtin' && agentIndex.has(a.type)
+      const id = 'sub-' + a.id, data = { id, kind: 'sub', role, lookKey: 'agent:' + a.type, name: a.type, parent: s.id, description: a.description, updatedAt: a.at, tokens: 0, subagents: [] }
       seen.add(id)
       let sub = ents.get(id)
       const spot = subSpot(e, k)
@@ -560,6 +577,8 @@ function sync(list) {
   for (const e of ents.values()) if (!seen.has(e.id) && !e.leaving) leave(e)
   const preselect = firstLoad && new URLSearchParams(location.search).get('select') // 주소의 ?select=세션id 로 그 캐릭터 패널을 연 채 시작한다
   if (preselect && ents.has(preselect)) { selected = preselect; renderPanel() }
+  const rosterParam = firstLoad ? new URLSearchParams(location.search).get('roster') : null // ?roster 또는 ?roster=직군 으로 명부를 연 채 시작한다
+  if (rosterParam !== null) openRoster(rosterParam || null)
   firstLoad = false
   const n = { work: entsIn('work'), help: entsIn('help'), rest: entsIn('rest') }
   nWork.textContent = n.work; nHelp.textContent = n.help; nRest.textContent = n.rest
@@ -610,16 +629,16 @@ function frame(t) {
     const hy = sprite ? e.y - SPRITE_RISE + sink : e.y
     items.push({ base: e.y + 16, draw: (c) => {
       if (sprite) drawSprite(c, e, pose, t, sink)
-      else drawChar(c, e.x, e.y, isSub(e) ? { ...e.look, acc: 'cap', shirt: '#ff8a3d' } : e.look, pose === 'play' || pose === 'assist' ? 'idle' : pose, t, e.seed)
+      else drawChar(c, e.x, e.y, isSub(e) && !e.data.role ? { ...e.look, acc: 'cap', shirt: '#ff8a3d' } : e.look, pose === 'play' || pose === 'assist' ? 'idle' : pose, t, e.seed)
       if (pose === 'sleep') drawZzz(c, e.x, hy, t)
       if (pose === 'alert') drawBang(c, e.x, hy, t)
       if (pose === 'type') (e.data.phase === 'tool' ? drawDots(c, e.x + 14, hy + 1, t) : drawSpark(c, e.x + 15, hy - 1, t))
       if (pose === 'assist') drawDots(c, e.x + 1, hy - 5, t)
-      if (hovered === e.id || selected === e.id) { c.strokeStyle = '#fff'; c.lineWidth = 1; c.strokeRect(Math.round(e.x) - 1.5, Math.round(hy) - 3.5, 15, Math.round(e.y - hy) + 21 + sink) }
+      if (hovered === e.id || selected === e.id || (rosterOpen && rosterPick && isSub(e) && e.data.name === rosterPick)) { c.strokeStyle = '#fff'; c.lineWidth = 1; c.strokeRect(Math.round(e.x) - 1.5, Math.round(hy) - 3.5, 15, Math.round(e.y - hy) + 21 + sink) }
     } })
     e.hy = hy
     // 이름표와 말풍선 위치. 휴게실 캐릭터와 조수는 가구를 가리지 않도록 마우스를 올렸을 때만 이름표를 보여준다.
-    const quiet = (e.zone === 'rest' || isSub(e)) && hovered !== e.id && selected !== e.id
+    const quiet = e.zone === 'rest' && hovered !== e.id && selected !== e.id
     e.tag.style.display = quiet ? 'none' : 'block'
     e.tag.style.left = (e.x + 6) * scale + 'px'
     e.tag.style.top = (seated ? e.y + 28.5 : e.y + 18) * scale + 'px' // 앉아 있으면 책상 앞면의 명패 자리
@@ -685,29 +704,36 @@ function renderPanel(full = true) {
   panel.innerHTML = `<button class="x">×</button><h2></h2><div id="info">${info}</div>
     ${askBlock(e)}
     ${actsBlock(e)}
-    <h3>캐릭터 꾸미기</h3>
-    <div class="dress">
-      <label>별명</label><input type="text" id="fNick" maxlength="14" placeholder="${esc(clip(s.name, 14))}" value="${esc(e.look.nick)}">
-      ${useSprites() ? `
-      <label>몸</label><select id="fBody">${BODIES.map((n, i) => `<option value="${i}"${i === e.look.body ? ' selected' : ''}>${n}</option>`).join('')}</select>
-      <label>머리</label><select id="fHairStyle">${HAIRSTYLES.map((_, i) => `<option value="${i}"${i === e.look.hairStyle ? ' selected' : ''}>머리 ${i + 1}</option>`).join('')}<option value="-1"${e.look.hairStyle === -1 ? ' selected' : ''}>없음</option></select>
-      <label>옷</label><select id="fOutfit">${OUTFITS.map((o, i) => `<option value="${i}"${i === e.look.outfit ? ' selected' : ''}>${o.name}</option>`).join('')}</select>
-      <label>왕관</label><select id="fAcc"><option value="none">없음</option><option value="crown"${e.look.acc === 'crown' ? ' selected' : ''}>쓰기</option></select>` : `
-      <label>머리</label><input type="color" id="fHair" value="${e.look.hair}">
-      <label>피부</label><input type="color" id="fSkin" value="${e.look.skin}">
-      <label>옷</label><input type="color" id="fShirt" value="${e.look.shirt}">
-      <label>장식</label><select id="fAcc">${Object.entries(ACCS).map(([k, v]) => `<option value="${k}"${k === e.look.acc ? ' selected' : ''}>${v}</option>`).join('')}</select>`}
-      <span></span><button id="fReset">처음 모습으로</button>
-    </div>`
+    ${dressHtml(e.look, s.name)}`
   panel.querySelector('h2').textContent = e.look.nick || s.name
   panel.style.display = 'block'
   panel.querySelector('.x').onclick = closePanel
   panel.querySelectorAll('[data-copy]').forEach((b) => { b.onclick = () => copyText(b.dataset.copy, b) })
   panel.querySelectorAll('[data-act]').forEach((b) => { b.onclick = () => doAct(b.dataset.act, e) })
-  const bind = (id, key, num) => { const el = panel.querySelector(id); if (!el) return; el.oninput = (ev) => { e.look[key] = num ? Number(ev.target.value) : ev.target.value; e.sheet = null; saveLook(e); refreshLabels(e); panel.querySelector('h2').textContent = e.look.nick || s.name } }
+  bindDress(e.lookKey, s, () => { refreshLabels(e); panel.querySelector('h2').textContent = e.look.nick || s.name }, () => renderPanel())
+}
+function dressHtml(look, name) {
+  return `<h3>캐릭터 꾸미기</h3>
+    <div class="dress">
+      <label>별명</label><input type="text" id="fNick" maxlength="14" placeholder="${esc(clip(name, 14))}" value="${esc(look.nick)}">
+      ${useSprites() ? `
+      <label>몸</label><select id="fBody">${BODIES.map((n, i) => `<option value="${i}"${i === look.body ? ' selected' : ''}>${n}</option>`).join('')}</select>
+      <label>머리</label><select id="fHairStyle">${HAIRSTYLES.map((_, i) => `<option value="${i}"${i === look.hairStyle ? ' selected' : ''}>머리 ${i + 1}</option>`).join('')}<option value="-1"${look.hairStyle === -1 ? ' selected' : ''}>없음</option></select>
+      <label>옷</label><select id="fOutfit">${OUTFITS.map((o, i) => `<option value="${i}"${i === look.outfit ? ' selected' : ''}>${o.name}</option>`).join('')}</select>
+      <label>왕관</label><select id="fAcc"><option value="none">없음</option><option value="crown"${look.acc === 'crown' ? ' selected' : ''}>쓰기</option></select>` : `
+      <label>머리</label><input type="color" id="fHair" value="${look.hair}">
+      <label>피부</label><input type="color" id="fSkin" value="${look.skin}">
+      <label>옷</label><input type="color" id="fShirt" value="${look.shirt}">
+      <label>장식</label><select id="fAcc">${Object.entries(ACCS).map(([k, v]) => `<option value="${k}"${k === look.acc ? ' selected' : ''}>${v}</option>`).join('')}</select>`}
+      <span></span><button id="fReset">처음 모습으로</button>
+    </div>`
+}
+function bindDress(key, seed, onChange, onReset) {
+  const look = looks.get(key)
+  const bind = (id, field, num) => { const el = panel.querySelector(id); if (el) el.oninput = (ev) => { look[field] = num ? Number(ev.target.value) : ev.target.value; saveLook(key); onChange() } }
   bind('#fNick', 'nick'); bind('#fHair', 'hair'); bind('#fSkin', 'skin'); bind('#fShirt', 'shirt'); bind('#fAcc', 'acc')
   bind('#fBody', 'body', true); bind('#fHairStyle', 'hairStyle', true); bind('#fOutfit', 'outfit', true)
-  panel.querySelector('#fReset').onclick = () => { e.sheet = null; e.look = defaultLook(s); saveLook(e); refreshLabels(e); renderPanel() }
+  panel.querySelector('#fReset').onclick = () => { resetLook(key, seed); onChange(); onReset() }
 }
 function renderSubPanel(e) {
   const s = e.data, parent = ents.get(s.parent)
@@ -715,8 +741,10 @@ function renderSubPanel(e) {
     <dt>역할</dt><dd><span class="badge" style="background:var(--work)">조수(서브에이전트)</span></dd>
     <dt>맡은 일</dt><dd>${esc(s.description || '기록 없음')}</dd>
     <dt>부른 세션</dt><dd>${esc(parent ? parent.look.nick || parent.data.name : s.parent)}</dd>
-    <dt>마지막 기록</dt><dd>${ago(s.updatedAt)}</dd></dl>`
-  panel.querySelector('h2').textContent = s.name
+    <dt>마지막 기록</dt><dd>${ago(s.updatedAt)}</dd></dl>
+    <div class="acts" style="margin-top:12px"><button class="primary" id="toRoster">직원 명부에서 보기</button></div>`
+  panel.querySelector('#toRoster').onclick = () => openRoster(s.name)
+  panel.querySelector('h2').textContent = e.look.nick || s.name
   panel.style.display = 'block'
   panel.querySelector('.x').onclick = closePanel
 }
@@ -725,7 +753,7 @@ function copyText(text, btn) {
   const fallback = () => { const ta = document.createElement('textarea'); ta.value = text; document.body.append(ta); ta.select(); document.execCommand('copy'); ta.remove(); done() }
   if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, fallback); else fallback()
 }
-function closePanel() { const prev = ents.get(selected); selected = null; panel.style.display = 'none'; if (prev) refreshLabels(prev) }
+function closePanel() { const prev = ents.get(selected); selected = null; rosterOpen = false; panel.style.display = 'none'; if (prev) refreshLabels(prev) }
 
 function pick(ev) {
   const r = cv.getBoundingClientRect(), mx = (ev.clientX - r.left) / scale, my = (ev.clientY - r.top) / scale
@@ -737,8 +765,63 @@ cv.addEventListener('mousemove', (ev) => { const e = pick(ev); hovered = e ? e.i
 cv.addEventListener('click', (ev) => {
   const e = pick(ev), prev = ents.get(selected)
   if (!e) return closePanel()
-  selected = e.id; if (prev) refreshLabels(prev); refreshLabels(e); renderPanel()
+  rosterOpen = false; selected = e.id; if (prev) refreshLabels(prev); refreshLabels(e); renderPanel()
 })
+
+/* ---------- 직원 명부 ---------- */
+// 직군 에이전트(정의해 둔 서브에이전트)별로 지금 어디서 일하는지, 지금까지 몇 번 불렸고 무슨 일을 맡았는지 보여준다.
+let agentsData = [], agentIndex = new Map(), rosterOpen = false, rosterPick = null, rosterProject = ''
+function portrait(look, px) {
+  const cvs = document.createElement('canvas'); cvs.width = 32; cvs.height = 32
+  cvs.style.cssText = `width:${px}px;height:${px}px;image-rendering:pixelated;flex:none;background:var(--bg);border:2px solid var(--line);border-radius:4px`
+  const c = cvs.getContext('2d'); c.imageSmoothingEnabled = false
+  if (useSprites()) c.drawImage(sheetOf(look), 0, 0, 32, 32, 0, 1, 32, 32); else drawChar(c, 10, 9, look, 'idle', 0, 1)
+  return cvs
+}
+const agentLook = (a) => lookFor('agent:' + a.type, { kind: a.scope === 'builtin' ? 'sub' : 'role' })
+function openRoster(type = null) { const prev = ents.get(selected); selected = null; if (prev) refreshLabels(prev); rosterOpen = true; rosterPick = type; renderRoster(true) }
+function renderRoster(force) {
+  const list = agentsData.filter((a) => !rosterProject || a.byProject[rosterProject])
+  const key = JSON.stringify([rosterPick, rosterProject, style, spritesReady, list.map((a) => [a.type, a.count, a.active.length, a.lastAt])])
+  if (!force && panel.dataset.rosterKey === key) return
+  panel.dataset.rosterKey = key
+  panel.style.display = 'block'
+  const a = rosterPick && agentIndex.get(rosterPick)
+  if (a) { // 한 명 자세히
+    const look = agentLook(a), recent = a.recent.filter((r) => !rosterProject || r.project === rosterProject)
+    panel.innerHTML = `<button class="x">×</button><button id="rBack">← 명부</button>
+      <div class="rhead"><span id="rFace"></span><div><h2 style="margin:0 0 4px"></h2><span class="badge" style="background:${a.active.length ? 'var(--work)' : 'var(--rest)'}">${a.active.length ? '일하는 중' : '대기 중'}</span></div></div>
+      <dl>
+        ${a.description ? `<dt>하는 일</dt><dd>${esc(a.description)}</dd>` : ''}
+        ${a.active.length ? `<dt>지금</dt><dd>${a.active.map((x) => esc(x.sessionName)).join(', ')} 세션 옆에서 일하는 중</dd>` : ''}
+        <dt>불린 횟수</dt><dd>${a.count}회${Object.keys(a.byProject).length > 1 ? ' (' + Object.entries(a.byProject).map(([p, n]) => `${esc(p)} ${n}`).join(', ') + ')' : ''}</dd>
+        <dt>마지막</dt><dd>${a.lastAt ? ago(a.lastAt) : '아직 불린 적 없음'}</dd>
+        <dt>종류</dt><dd>${{ user: '내 직군 에이전트', project: '프로젝트 직군 에이전트', builtin: '기본 조수' }[a.scope]}</dd>
+      </dl>
+      <h3>최근에 맡은 일</h3>
+      ${recent.length ? `<ul class="tasks">${recent.map((r) => `<li>${esc(r.description || '설명 없음')}<small>${ago(r.at)}${r.sessionName ? ', ' + esc(r.sessionName) : ''}</small></li>`).join('')}</ul>` : '<p class="hint">기록이 없어요</p>'}
+      ${dressHtml(look, a.type)}`
+    panel.querySelector('h2').textContent = look.nick || a.type
+    panel.querySelector('#rFace').append(portrait(look, 64))
+    panel.querySelector('#rBack').onclick = () => { rosterPick = null; renderRoster(true) }
+    const refresh = () => { for (const e of ents.values()) if (e.lookKey === 'agent:' + a.type) refreshLabels(e); renderRoster(true) }
+    bindDress('agent:' + a.type, { kind: a.scope === 'builtin' ? 'sub' : 'role' }, refresh, refresh)
+  } else { // 전체 명부
+    const projects = [...new Set(agentsData.flatMap((x) => Object.keys(x.byProject)))].sort()
+    const row = (x) => `<div class="rrow" data-type="${esc(x.type)}"><span class="face"></span><div><b>${esc(agentLook(x).nick || x.type)}</b>
+      <small class="${x.active.length ? 'on' : ''}">${x.active.length ? '일하는 중: ' + esc(x.active[0].sessionName) : '대기 중'}</small>
+      <small>${rosterProject ? x.byProject[rosterProject] : x.count}회${x.lastAt ? ', 마지막 ' + ago(x.lastAt) : ''}</small></div></div>`
+    const mine = list.filter((x) => x.scope !== 'builtin'), builtin = list.filter((x) => x.scope === 'builtin')
+    panel.innerHTML = `<button class="x">×</button><h2>직원 명부</h2>
+      <p class="hint" style="margin:0 0 10px">직군 ${mine.length}명, 지금 일하는 중 ${list.filter((x) => x.active.length).length}명</p>
+      ${projects.length > 1 ? `<select id="rProj" class="rsel"><option value="">모든 프로젝트</option>${projects.map((p) => `<option${p === rosterProject ? ' selected' : ''}>${esc(p)}</option>`).join('')}</select>` : ''}
+      ${mine.map(row).join('') || '<p class="hint">정의된 직군 에이전트가 없어요. ~/.claude/agents 에 에이전트를 만들면 여기에 나옵니다.</p>'}
+      ${builtin.length ? `<h3>기본 조수</h3>${builtin.map(row).join('')}` : ''}`
+    panel.querySelectorAll('.rrow').forEach((el) => { const x = agentIndex.get(el.dataset.type); el.querySelector('.face').append(portrait(agentLook(x), 40)); el.onclick = () => { rosterPick = x.type; renderRoster(true) } })
+    const sel = panel.querySelector('#rProj'); if (sel) sel.onchange = () => { rosterProject = sel.value; renderRoster(true) }
+  }
+  panel.querySelector('.x').onclick = closePanel
+}
 
 /* ---------- 세션 제어 ---------- */
 // 서버가 화면에 심어 준 토큰. 세션을 바꾸는 요청에는 이 값이 있어야 한다.
@@ -770,6 +853,7 @@ async function doAct(name, e) {
   if (name === 'stop' && await ask('세션을 멈출까요?', `‘${label}’ 이(가) 하던 일을 멈춥니다. 대화는 보존되어 나중에 이어 갈 수 있어요.`, '멈추기')) return act('stop', { id: s.id })
   if (name === 'remove' && await ask('세션을 지울까요?', `‘${label}’ 의 대화 기록을 지웁니다. 되돌릴 수 없어요. push 하지 않은 커밋이 있는 워크트리는 지워지지 않고 안내가 나옵니다.`, '지우기')) { if (await act('remove', { id: s.id })) closePanel() }
 }
+document.getElementById('rosterBtn').onclick = () => (rosterOpen && !rosterPick ? closePanel() : openRoster())
 document.getElementById('newBtn').onclick = () => {
   if (!knownDirs.length) return toast('아직 세션이 돌았던 프로젝트 폴더가 없어요. 터미널에서 claude --bg 로 한 번 시작해 주세요.')
   modalBox.innerHTML = `<h2>새 세션 시작</h2>
@@ -832,12 +916,18 @@ function demoSessions() {
   return [mk(0, 'working', { subagents: [sub('a', 'Explore'), sub('b', 'frontend-developer'), sub('c', 'Plan')] }), mk(1, 'working'), mk(2, 'working', { subagents: [sub('d', 'general-purpose')] }), mk(3, 'working'), mk(4, 'working'),
     mk(5, 'blocked'), mk(6, 'blocked'), ...[...Array(17).keys()].map((k) => mk(7 + k, 'done'))]
 }
+function setAgents(list) { agentsData = list; agentIndex = new Map(list.map((a) => [a.type, a])); if (rosterOpen) renderRoster(false) }
+function demoAgents() {
+  const mk = (type, scope, count, days, active) => ({ type, scope, description: scope === 'builtin' ? '' : `${type} 역할의 데모 에이전트입니다.`, count, lastAt: Date.now() - days * 864e5, active: active ? [{ sessionName: active }] : [], byProject: { demo: count }, recent: [...Array(Math.min(count, 4)).keys()].map((k) => ({ description: `demo task ${k + 1}`, at: Date.now() - (days + k) * 864e5, project: 'demo', sessionName: 'demo session 0' })) })
+  return [mk('frontend-developer', 'user', 8, 0, 'demo session 0'), mk('Explore', 'builtin', 7, 0, 'demo session 0'), mk('general-purpose', 'builtin', 24, 0, 'demo session 2'), mk('data-scientist', 'user', 15, 4), mk('senior-pd', 'user', 5, 5), mk('backend-developer', 'user', 6, 6), mk('senior-pm', 'user', 0, 0)].map((a) => (a.count ? a : { ...a, lastAt: null, recent: [] }))
+}
 async function poll() {
-  if (DEMO) return sync(demoSessions())
+  if (DEMO) { setAgents(demoAgents()); return sync(demoSessions()) }
   try {
     const res = await fetch('/api/sessions', { cache: 'no-store' })
     const data = await res.json()
     knownDirs = data.dirs || []
+    setAgents(data.agents || [])
     sync(data.sessions)
     document.getElementById('offline').style.display = 'none'
   } catch { document.getElementById('offline').style.display = 'block' }

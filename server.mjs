@@ -112,6 +112,59 @@ function placeOf(cwd = '') {
 const knownDirs = new Set()
 const jobStates = new Map()
 
+/* ---------- 직원 명부: 직군 에이전트 정의와 지금까지의 활동 ---------- */
+// 정의는 ~/.claude/agents 와 각 프로젝트의 .claude/agents 의 *.md 머리말에서, 활동은 세션마다 남는 subagents/*.meta.json 에서 읽는다.
+const ROSTER_TTL = 10 * 1000
+let rosterCache = { at: 0, value: [] }
+async function agentDefs() {
+  const defs = new Map()
+  const places = [[path.join(CLAUDE_DIR, 'agents'), 'user'], ...[...knownDirs].map((d) => [path.join(d, '.claude', 'agents'), 'project'])]
+  for (const [dir, scope] of places) {
+    for (const f of (await readdir(dir).catch(() => [])).filter((n) => n.endsWith('.md'))) {
+      const head = (await readFile(path.join(dir, f), 'utf8').catch(() => '')).slice(0, 4000)
+      const name = head.match(/^name:\s*(.+)$/m)?.[1]?.trim() || f.replace(/\.md$/, '')
+      if (!defs.has(name)) defs.set(name, { scope, description: (head.match(/^description:\s*(.+)$/m)?.[1] || '').trim().replace(/^["']|["']$/g, '').slice(0, 240) })
+    }
+  }
+  return defs
+}
+function projectLabel(encoded) { // 폴더 이름은 경로의 / 를 - 로 바꾼 것이라 완벽히 되돌릴 수 없다. 아는 프로젝트와 맞춰 보고, 안 되면 끝부분만 쓴다.
+  const base = encoded.split('--claude-worktrees-')[0]
+  for (const d of knownDirs) if (encodeCwd(d) === base) return path.basename(d)
+  return base.replace(encodeCwd(os.homedir()), '').replace(/^-+/, '') || base
+}
+async function roster(sessionNames, workingIds) {
+  if (Date.now() - rosterCache.at < ROSTER_TTL) return rosterCache.value
+  const defs = await agentDefs()
+  const blank = (type, scope, description) => ({ type, scope, description, count: 0, lastAt: null, active: [], recent: [], byProject: {} })
+  const agents = new Map([...defs].map(([type, d]) => [type, blank(type, d.scope, d.description)]))
+  const root = path.join(CLAUDE_DIR, 'projects')
+  for (const proj of await readdir(root).catch(() => [])) {
+    for (const sess of await readdir(path.join(root, proj)).catch(() => [])) {
+      if (sess.endsWith('.jsonl')) continue
+      const dir = path.join(root, proj, sess, 'subagents')
+      for (const f of (await readdir(dir).catch(() => [])).filter((n) => n.endsWith('.meta.json'))) {
+        const meta = await readJson(path.join(dir, f))
+        const st = await stat(path.join(dir, f.replace(/\.meta\.json$/, '.jsonl'))).catch(() => null)
+        if (!meta || !st) continue
+        const type = meta.agentType || 'agent'
+        if (!agents.has(type)) agents.set(type, blank(type, 'builtin', ''))
+        const a = agents.get(type), project = projectLabel(proj), sessionName = sessionNames.get(sess) || null
+        a.count++
+        a.byProject[project] = (a.byProject[project] || 0) + 1
+        if (!a.lastAt || st.mtimeMs > a.lastAt) a.lastAt = st.mtimeMs
+        a.recent.push({ description: (meta.description || '').slice(0, 160), at: st.mtimeMs, project, sessionName })
+        if (workingIds.has(sess) && Date.now() - st.mtimeMs < SUB_ACTIVE_MS) a.active.push({ sessionName: sessionName || sess.slice(0, 8) })
+      }
+    }
+  }
+  const value = [...agents.values()]
+    .map((a) => ({ ...a, recent: a.recent.sort((x, y) => y.at - x.at).slice(0, 8) }))
+    .sort((x, y) => y.active.length - x.active.length || (y.lastAt || 0) - (x.lastAt || 0))
+  rosterCache = { at: Date.now(), value }
+  return value
+}
+
 async function collect() {
   const jobsDir = path.join(CLAUDE_DIR, 'jobs')
   const sessionsDir = path.join(CLAUDE_DIR, 'sessions')
@@ -188,7 +241,9 @@ async function collect() {
       permissionMode: activity?.mode ?? null,
     })
   }
-  return { now: Date.now(), sessions: out, dirs: [...knownDirs].sort() }
+  const sessionNames = new Map(jobs.map((j) => [j.sessionId, j.name || j.daemonShort]))
+  const workingIds = new Set(jobs.filter((j) => j.state === 'working').map((j) => j.sessionId))
+  return { now: Date.now(), sessions: out, dirs: [...knownDirs].sort(), agents: await roster(sessionNames, workingIds) }
 }
 
 /* ---------- 세션 제어 ---------- */

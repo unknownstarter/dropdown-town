@@ -19,12 +19,20 @@ Claude Code 로 여러 세션을 동시에 돌리다 보면 누가 일하고 있
 | 어디에 있나 | 무슨 뜻인가 |
 | --- | --- |
 | 작업실 책상 | 일하는 중입니다. 말풍선에 지금 하는 일과 최근에 쓴 도구가 나옵니다. |
-| 책상 옆 작업모 쓴 조수 | 그 세션이 부른 서브에이전트입니다. |
+| 책상 옆에 선 캐릭터 | 그 세션이 부른 서브에이전트입니다. 내가 정의한 직군 에이전트는 직군마다 늘 같은 얼굴과 명찰로 나오고, 기본 조수는 작업모를 씁니다. |
 | 빨간 카펫의 호출 벨 | 내 답을 기다리며 멈춰 있습니다. 가장 먼저 챙겨야 할 세션입니다. |
 | 휴게실 | 일을 끝냈습니다. 소파에서 TV 를 보거나, 오락기를 하거나, 오래됐으면 잡니다. |
 | 왕관 | 터미널에서 내가 직접 연 세션입니다. |
 
 캐릭터를 누르면 받은 요청, 토큰 수(레벨), PR 링크, 권한 모드(오토 모드인지)가 나오고 별명과 생김새를 바꿀 수 있습니다.
+
+### 직원 명부 (직군 에이전트 현황)
+
+`~/.claude/agents` 나 프로젝트의 `.claude/agents` 에 직군 에이전트(frontend-developer, data-scientist 같은 서브에이전트)를 만들어 쓰신다면, 오른쪽 위 "직원 명부"에서 팀 전체를 볼 수 있습니다.
+
+- 직군별로 지금 어느 세션 옆에서 일하는지, 지금까지 몇 번 불렸는지, 마지막이 언제인지 나옵니다.
+- 한 명을 누르면 최근에 맡은 일 목록과 어느 세션에서였는지가 나오고, 캐릭터를 꾸밀 수 있습니다. 꾸민 모습은 그 직군이 불릴 때마다 그대로 나옵니다.
+- 프로젝트가 여럿이면 프로젝트별로 걸러 볼 수 있습니다.
 
 ### 사무실에서 세션 다루기
 
@@ -110,7 +118,7 @@ node server.mjs
 
 | 단계 | 내용 | 상태 |
 | --- | --- | --- |
-| 1 | 내 맥에서 도는 세션과 서브에이전트를 사무실로 구경하기 | 지금 여기 |
+| 1 | 내 맥에서 도는 세션과 서브에이전트를 사무실로 구경하기, 직군 에이전트 명부 | 완료 |
 | 2 | 사무실 안에서 세션 다루기 (요청 내용 보기, 멈추기, 지우기, 새 일 시키기, 터미널에서 열기) | 첫 버전 완료. 사무실 안에서 바로 답하기는 예정 |
 | 3 | 사무실 안에 시뮬레이터(웹, 앱)와 브라우저 넣기. 에이전트가 만든 결과를 그 자리에서 확인 | 예정 |
 | 4 | 어디서든 접근. 휴대폰이나 다른 컴퓨터에서 내 사무실에 들어가기 | 예정 |
@@ -138,12 +146,14 @@ When you run several Claude Code sessions at once, it is easy to lose track of w
 | Where they are | What it means |
 | --- | --- |
 | At a desk in the work room | Working. The bubble shows what it is doing and the last tool it used. |
-| Hard-hat helper next to a desk | A subagent spawned by that session. |
+| Character standing next to a desk | A subagent spawned by that session. Agents you defined keep the same face and name tag every time. Built-in helpers wear a hard hat. |
 | Red carpet by the bell | Blocked, waiting for your answer. Check these first. |
 | Lounge | Finished. Watching TV, playing the arcade, or asleep if it has been a while. |
 | Crown | A session you opened yourself in a terminal. |
 
 Click a character to see its prompt, token count (shown as a level), PR links, permission mode (auto or not), and to change its nickname and look.
+
+**Staff roster.** If you define your own subagents under `~/.claude/agents` or a project's `.claude/agents`, the "직원 명부" button shows your whole team: who is working next to which session right now, how many times each one was called, their recent tasks, and a per-project filter. Dress an agent once and it shows up with that look every time it is called.
 
 You can also manage sessions from the office: read what a blocked session is asking, open it in Terminal to answer (accept or deny happens in Claude Code itself, since there is no official way to answer from outside), stop a working session, delete a finished one, and start a new one with the "+ 새 세션" button. The UI is in Korean for now. Translations are welcome.
 
@@ -223,7 +233,7 @@ The goal is **access to your sessions from anywhere, built around a virtual offi
 
 | Stage | What | Status |
 | --- | --- | --- |
-| 1 | Watch local sessions and subagents in the office | You are here |
+| 1 | Watch local sessions and subagents in the office, staff roster for your own agents | Done |
 | 2 | Control sessions from the office (read requests, stop, delete, start new work, open in Terminal) | First version done. Answering from inside the office is planned |
 | 3 | Simulators (web, app) and a browser inside the office, to check what agents built on the spot | Planned |
 | 4 | Access from anywhere: enter your office from a phone or another computer | Planned |
