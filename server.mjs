@@ -215,9 +215,9 @@ async function collect() {
     })
   }
 
-  // 백그라운드 작업이 아닌, 터미널에서 직접 연 대화형 세션.
+  // 백그라운드 작업이 아닌 세션: 터미널에서 직접 연 것, 그리고 데스크톱 앱 등 다른 곳에서 연 것(종류 이름을 가리지 않는다).
   for (const proc of procs) {
-    if (usedPids.has(proc.pid) || proc.kind !== 'interactive') continue
+    if (usedPids.has(proc.pid) || proc.kind === 'bg') continue
     const activity = await lastActivity(transcriptOf(proc.cwd || '', proc.sessionId))
     const recent = activity && Date.now() - activity.at < 5 * 60 * 1000
     out.push({
