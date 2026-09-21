@@ -12,6 +12,7 @@ const PORT = Number(process.env.PORT) || 4777
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const TAIL_BYTES = 96 * 1024
 const ACTIVE_MS = 15 * 1000
+const SUB_ACTIVE_MS = 90 * 1000
 const phaseOf = (activity) => (activity ? (Date.now() - activity.at < ACTIVE_MS ? 'tool' : 'thinking') : null)
 
 // state.json 은 데몬이 수시로 덮어쓴다. 쓰는 도중에 읽어 파싱이 깨지면 직전 값을 쓴다.
@@ -68,7 +69,21 @@ async function lastActivity(file) {
   return value
 }
 
-const encodeCwd = (cwd) => cwd.replace(/[^a-zA-Z0-9]/g, '-')
+// 세션이 부른 서브에이전트. 기록 파일이 최근까지 쓰이고 있으면 일하는 중으로 본다.
+async function subagentsOf(transcript) {
+  const dir = path.join(transcript.replace(/\.jsonl$/, ''), 'subagents')
+  const files = (await readdir(dir).catch(() => [])).filter((f) => f.endsWith('.jsonl'))
+  const out = []
+  for (const f of files) {
+    const st = await stat(path.join(dir, f)).catch(() => null)
+    if (!st || Date.now() - st.mtimeMs > SUB_ACTIVE_MS) continue
+    const meta = (await readJson(path.join(dir, f.replace(/\.jsonl$/, '.meta.json')))) || {}
+    out.push({ id: f.slice(6, -6), type: meta.agentType || 'agent', description: meta.description || '', at: st.mtimeMs })
+  }
+  return out.sort((a, b) => a.id.localeCompare(b.id)).slice(0, 6)
+}
+
+const encodeCwd =(cwd) => cwd.replace(/[^a-zA-Z0-9]/g, '-')
 const transcriptOf = (cwd, sessionId) => path.join(CLAUDE_DIR, 'projects', encodeCwd(cwd), `${sessionId}.jsonl`)
 
 function placeOf(cwd = '') {
@@ -99,8 +114,10 @@ async function collect() {
     const cwd = proc?.cwd || job.cwd || job.originCwd || ''
     const file = job.linkScanPath || transcriptOf(job.originCwd || cwd, job.sessionId)
     const activity = job.state === 'working' ? await lastActivity(file) : null
+    const subagents = job.state === 'working' ? await subagentsOf(file) : []
     out.push({
       id: job.daemonShort || job.sessionId,
+      subagents,
       kind: 'bg',
       name: job.name || job.daemonShort,
       state: job.state,
@@ -126,6 +143,7 @@ async function collect() {
     const recent = activity && Date.now() - activity.at < 5 * 60 * 1000
     out.push({
       id: `pid-${proc.pid}`,
+      subagents: [],
       kind: 'interactive',
       name: proc.name || `pid ${proc.pid}`,
       state: proc.status === 'busy' && recent ? 'working' : 'idle',
