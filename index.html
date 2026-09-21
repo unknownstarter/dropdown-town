@@ -66,7 +66,7 @@
   .bubble.help { max-width:calc(47px * var(--s)); } .bubble.help span { -webkit-line-clamp:1; }
   .bubble em { font-style:normal; color:#b35c00; } .bubble u { text-decoration:none; } .bubble .c { display:none; }
   body.compact .bubble .d { display:none; } body.compact .bubble .c { display:inline; } body.compact .bubble { padding:1px 5px; font-size:10px; } body.compact .bubble.help em { color:#b8404e; } body.compact .bubble { max-width:none; }
-  #panel { position:fixed; top:64px; right:12px; width:320px; max-height:calc(100vh - 80px); overflow:auto; display:none;
+  #panel { position:fixed; z-index:5; top:64px; right:12px; width:320px; max-height:calc(100vh - 80px); overflow:auto; display:none;
     background:var(--panel); border:2px solid var(--line); border-radius:6px; padding:14px; }
   #panel h2 { font-size:14px; margin:0 24px 8px 0; line-height:1.4; }
   #panel .x { position:absolute; top:8px; right:8px; padding:0 6px; }
