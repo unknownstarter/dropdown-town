@@ -99,7 +99,7 @@ claude --bg "이 폴더에 뭐가 있는지 요약해줘"
 | 새 일 시키기 | 오른쪽 위 "+ 새 세션"에서 프로젝트를 고르고 시킬 일을 적습니다. |
 | 내 에이전트 팀 보기 | 오른쪽 위 "직원 명부". 직접 만든 직군 에이전트별로 지금 어디서 일하는지, 몇 번 불렸는지, 최근에 맡은 일이 나옵니다. |
 | 캐릭터 꾸미기 | 캐릭터를 누르면 아래쪽에 별명, 몸, 머리, 옷을 바꾸는 칸이 있습니다. |
-| 화면 옆에 세로로 붙여 두기 | 메뉴 "보기"의 "화면 왼쪽 3분의 1에 붙이기"(⌘[)나 "오른쪽"(⌘]). 창이 좁아지면 위에는 사무실 미니맵, 아래에는 세션 카드 목록으로 구성이 바뀝니다. "항상 위에 두기"(⌘T)와 같이 쓰면 좋습니다. |
+| 화면 옆에 세로로 붙여 두기 | 메뉴 "보기"의 "화면 왼쪽 3분의 1에 붙이기"(⌘[)나 "오른쪽"(⌘]). 창이 좁아지면 사무실을 줄이지 않고 크게 보여주면서, 카메라가 사람이 있는 쪽을 천천히 오갑니다. 누가 호출 벨을 누르면 그쪽을 비추고, 그림을 끌거나 양옆 화살표를 눌러 직접 움직일 수도 있습니다. 아래에는 세션 카드 목록이 나옵니다. "항상 위에 두기"(⌘T)와 같이 쓰면 좋습니다. |
 | 코드 편집기 옆에 작게 띄우기 | 메뉴 "보기"의 "작은 창으로"(⌘1). |
 | 알림음 켜기 | 오른쪽 위 "알림음" 버튼. 세션이 나를 찾거나 일을 끝내면 소리가 납니다. |
 
@@ -255,7 +255,7 @@ claude --bg "Summarize what is in this folder"
 | Start new work | "+ 새 세션" at the top right: pick a project and describe the task. |
 | See your agent team | "직원 명부" at the top right: for each subagent you defined, where it is working now, how often it was called, and its recent tasks. |
 | Dress up a character | Click it and use the fields at the bottom of the panel. |
-| Dock it to the side of your screen | View menu: snap to the left third (⌘[) or right third (⌘]). In a narrow window the layout switches to a mini-map of the office on top and a list of session cards below. Works well with Always on top (⌘T). |
+| Dock it to the side of your screen | View menu: snap to the left third (⌘[) or right third (⌘]). In a narrow window the office stays large and a camera slowly pans between the sides where characters are. It jumps to the bell when someone needs you, and you can drag the scene or use the side arrows. A list of session cards sits below. Works well with Always on top (⌘T). |
 | Keep it small beside your editor | View menu: Compact window (⌘1). |
 
 
