@@ -4,7 +4,7 @@
 
 **Watch and manage your Claude Code sessions in a tiny pixel office.** [English guide below](#english)
 
-![Dropdown Town 화면](docs/screenshot.png)
+![Dropdown Town 시연: 세션이 출근하고, 조수가 합류하고, 호출 벨로 걸어가고, 일을 끝내면 휴게실로 갑니다](docs/demo.gif)
 
 <img src="docs/screenshot-sidebar.png" alt="좁은 창 구성" width="320">
 
@@ -25,6 +25,11 @@ Claude Code 로 여러 일을 동시에 시켜 두면, 누가 일하고 있고 �
 | 빨간 카펫의 호출 벨 | 내 답을 기다리며 멈춰 있습니다. 가장 먼저 챙길 세션입니다. |
 | 휴게실 | 일을 끝냈습니다. TV 를 보거나, 오락기를 하거나, 오래됐으면 잡니다. |
 | 왕관 | 터미널에서 내가 직접 연 세션입니다. |
+
+
+세션이 가득 찬 사무실은 이런 모습입니다.
+
+![Dropdown Town 화면](docs/screenshot.png)
 
 
 ### 처음이신 분을 위한 설치 (약 5분)
@@ -98,7 +103,7 @@ claude --bg "이 폴더에 뭐가 있는지 요약해줘"
 | 끝난 세션 지우기 | 휴게실 캐릭터를 누르고 "세션 지우기". |
 | 새 일 시키기 | 오른쪽 위 "+ 새 세션"에서 프로젝트를 고르고 시킬 일을 적습니다. |
 | 내 에이전트 팀 보기 | 오른쪽 위 "직원 명부". 직접 만든 직군 에이전트별로 지금 어디서 일하는지, 몇 번 불렸는지, 최근에 맡은 일이 나옵니다. |
-| 캐릭터 꾸미기 | 캐릭터를 누르면 아래쪽에 별명, 몸, 머리, 옷을 바꾸는 칸이 있습니다. |
+| 캐릭터 꾸미기 | 캐릭터를 누르면 아래쪽에 별명, 몸, 머리, 옷, 장식(왕관, 고양이 귀, 리본)과 장식 색을 바꾸는 칸이 있습니다. |
 | 화면 옆에 세로로 붙여 두기 | 메뉴 "보기"의 "화면 왼쪽 3분의 1에 붙이기"(⌘[)나 "오른쪽"(⌘]). 창이 좁아지면 사무실을 줄이지 않고 크게 보여주면서, 카메라가 사람이 있는 쪽을 천천히 오갑니다. 누가 호출 벨을 누르면 그쪽을 비추고, 그림을 끌거나 양옆 화살표를 눌러 직접 움직일 수도 있습니다. 아래에는 세션 카드 목록이 나옵니다. "항상 위에 두기"(⌘T)와 같이 쓰면 좋습니다. |
 | 코드 편집기 옆에 작게 띄우기 | 메뉴 "보기"의 "작은 창으로"(⌘1). |
 | 알림음 켜기 | 오른쪽 위 "알림음" 버튼. 세션이 나를 찾거나 일을 끝내면 소리가 납니다. |
@@ -147,7 +152,7 @@ claude --bg "이 폴더에 뭐가 있는지 요약해줘"
 
 - 앱 없이 보기: `node server.mjs` 를 켜고 `http://localhost:4777` 을 엽니다. VS Code 나 Cursor 에서는 명령 팔레트의 "Simple Browser: Show" 에 같은 주소를 넣습니다.
 - 포트 바꾸기: `PORT=5000 node server.mjs`
-- 확인용 주소: `?demo=1`(가짜 세션으로 전체 미리 보기), `?roster`(직원 명부를 연 채 시작), `?select=세션id`, `?style=basic`, `?owner=호칭`
+- 확인용 주소: `?demo=1`(가짜 세션으로 전체 미리 보기), `?demo=story`(22초짜리 시연 장면 반복), `?roster`(직원 명부를 연 채 시작), `?select=세션id`, `?style=basic`, `?owner=호칭`
 - 설치할 패키지와 빌드 단계가 없습니다.
 
 | 파일 | 역할 |
@@ -158,6 +163,8 @@ claude --bg "이 폴더에 뭐가 있는지 요약해줘"
 | `assets/` | MetroCity 캐릭터와 가구 조각 |
 
 `server.mjs` 나 `index.html` 을 고친 뒤 앱에 반영하려면 `./build-app.sh` 를 다시 실행합니다.
+
+README 의 GIF 는 서버를 켠 채 `node scripts/capture-frames.mjs <폴더>` 로 프레임을 뽑아 만들었습니다. 크롬만 있으면 되고 설치할 패키지는 없습니다.
 
 </details>
 
@@ -300,7 +307,7 @@ The goal is **access to your sessions from anywhere, built around a virtual offi
 
 - Without the app: run `node server.mjs` and open `http://localhost:4777`. In VS Code or Cursor use "Simple Browser: Show".
 - Another port: `PORT=5000 node server.mjs`
-- Handy URLs: `?demo=1` (fake sessions), `?roster` (open the staff roster), `?select=<session id>`, `?style=basic`, `?owner=<title>`
+- Handy URLs: `?demo=1` (fake sessions), `?demo=story` (a looping 22-second scripted scene), `?roster` (open the staff roster), `?select=<session id>`, `?style=basic`, `?owner=<title>`
 - No packages to install and no build step.
 
 | File | Role |

@@ -62,6 +62,7 @@
     background:#fffdf6; color:#2a2233; border:2px solid #2a2233; border-radius:6px; padding:3px 6px; }
   .bubble span { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
   .bubble { max-width:calc(68px * var(--s)); } .bubble span { -webkit-line-clamp:1; } /* 책상 줄 간격이 좁아 한 줄만, 전체 내용은 패널에서 */
+  .bubble.two span { -webkit-line-clamp:2; }
   .bubble.help { border-color:#b8404e; background:#fff0f1; }
   .bubble.help { max-width:calc(47px * var(--s)); } .bubble.help span { -webkit-line-clamp:1; }
   .bubble em { font-style:normal; color:#b35c00; } .bubble u { text-decoration:none; } .bubble .c { display:none; }
@@ -127,7 +128,8 @@
 <div id="offline">서버와 연결이 끊겼어요. node server.mjs 가 켜져 있는지 확인해 주세요.</div>
 
 <script>
-const W = 480, H = 300, SPEED = 60
+const W = 480, H = 300
+let SPEED = 60
 // 화면에서 사용자를 부르는 호칭. 주소에 ?owner=대장 처럼 붙이면 바뀌고 그 뒤로 기억한다.
 let OWNER = '마스터'
 try { const q = new URLSearchParams(location.search).get('owner'); if (q) localStorage.setItem('town.owner', q.slice(0, 8)); OWNER = localStorage.getItem('town.owner') || OWNER } catch {}
@@ -301,6 +303,9 @@ function drawSprite(c, e, pose, t, sink) {
   R(c, e.x + 1, e.y + 15 + sink, 10, 2, 'rgba(0,0,0,.22)')
   c.drawImage(sheetOf(e.look), frame * 32, 0, 32, 32, Math.round(e.x) - 10, Math.round(dy), 32, 32)
   if (pose === 'coffee' && face === 'down') { R(c, e.x + 12, e.y + 4, 3, 3, '#ffffff'); R(c, e.x + 12, e.y + 4, 3, 1, '#6b4226'); R(c, e.x + 13, e.y + 1 - (Math.floor(t / 600) % 2), 1, 2, 'rgba(255,255,255,.7)') }
+  const acc = e.look.acc, ay = dy + 1, tint = e.look.accColor || '#ffffff'
+  if (acc === 'cat' || acc === 'catbow') { R(c, e.x + 1, ay - 2, 3, 4, tint); R(c, e.x + 8, ay - 2, 3, 4, tint); R(c, e.x + 2, ay - 1, 1, 2, '#f29c9c'); R(c, e.x + 9, ay - 1, 1, 2, '#f29c9c') }
+  if (acc === 'bow' || acc === 'catbow') { const bc = acc === 'bow' ? tint : '#e0457b'; R(c, e.x + 7, ay, 2, 3, bc); R(c, e.x + 10, ay, 2, 3, bc); R(c, e.x + 9, ay + 1, 1, 1, shade(bc, 0.7)) }
   if (e.look.acc === 'crown') { const y = dy + 1; R(c, e.x + 3, y, 6, 2, '#f5c542'); R(c, e.x + 3, y - 1, 1, 1, '#f5c542'); R(c, e.x + 5, y - 1, 2, 1, '#f5c542'); R(c, e.x + 8, y - 1, 1, 1, '#f5c542') }
 }
 
@@ -571,7 +576,7 @@ function refreshLabels(e) {
   // .d 는 넓은 창에서만, .c 는 좁은 창에서만 보인다(좁은 창에서는 짧은 상태만 띄우고 자세한 내용은 카드 목록이 맡는다)
   if (e.zone === 'work') { const tk = s.phase === 'tool' ? toolKo(s.tool) : s.phase === 'thinking' ? '생각 중' : ''; html = (tk ? `<em>[${esc(tk)}]</em>` : '<em class="c">일하는 중</em>') + `<u class="d"> ${esc(s.detail || '')}</u>` }
   else if (e.zone === 'help') html = `<em class="c">답이 필요해요</em><u class="d">${esc(s.detail || '답을 기다리고 있어요')}</u>`
-  e.bubble.className = 'bubble' + (e.zone === 'help' ? ' help' : '')
+  e.bubble.className = 'bubble' + (e.zone === 'help' ? ' help' : '') + (e.zone === 'work' && e.slot < 4 ? ' two' : '') // 윗줄 책상은 말풍선 위가 벽이라 두 줄까지 보여준다
   e.bubble.innerHTML = html ? `<span>${html}</span>` : ''
   e.bubble.dataset.empty = html ? '' : '1'
 }
@@ -639,7 +644,7 @@ function poseOf(e) {
 
 /* ---------- 그리기 루프 ---------- */
 let lastT = performance.now()
-function frame(t) {
+function frame(t, manual) {
   const dt = Math.min(0.1, (t - lastT) / 1000); lastT = t
   stepCamera(t, dt)
   const camX = Math.round(view.x)
@@ -685,7 +690,7 @@ function frame(t) {
   for (const it of items) it.draw(ctx)
   for (const z of zoneEls) { z.style.left = (z.dataset.x - camX) * scale + 'px'; z.style.top = z.dataset.y * scale + 'px' }
   document.getElementById('panL').style.opacity = view.target > 0 ? 1 : 0.35; document.getElementById('panR').style.opacity = view.target < maxPan() ? 1 : 0.35
-  requestAnimationFrame(frame)
+  if (!manual) requestAnimationFrame(frame)
 }
 
 /* ---------- 상세 패널 ---------- */
@@ -757,7 +762,8 @@ function dressHtml(look, name) {
       <label>몸</label><select id="fBody">${BODIES.map((n, i) => `<option value="${i}"${i === look.body ? ' selected' : ''}>${n}</option>`).join('')}</select>
       <label>머리</label><select id="fHairStyle">${HAIRSTYLES.map((_, i) => `<option value="${i}"${i === look.hairStyle ? ' selected' : ''}>머리 ${i + 1}</option>`).join('')}<option value="-1"${look.hairStyle === -1 ? ' selected' : ''}>없음</option></select>
       <label>옷</label><select id="fOutfit">${OUTFITS.map((o, i) => `<option value="${i}"${i === look.outfit ? ' selected' : ''}>${o.name}</option>`).join('')}</select>
-      <label>왕관</label><select id="fAcc"><option value="none">없음</option><option value="crown"${look.acc === 'crown' ? ' selected' : ''}>쓰기</option></select>` : `
+      <label>장식</label><select id="fAcc">${Object.entries({ none: '없음', crown: '왕관', cat: '고양이 귀', bow: '리본', catbow: '고양이 귀와 리본' }).map(([k, v]) => `<option value="${k}"${k === look.acc ? ' selected' : ''}>${v}</option>`).join('')}</select>
+      <label>장식 색</label><input type="color" id="fAccColor" value="${look.accColor || '#ffffff'}">` : `
       <label>머리</label><input type="color" id="fHair" value="${look.hair}">
       <label>피부</label><input type="color" id="fSkin" value="${look.skin}">
       <label>옷</label><input type="color" id="fShirt" value="${look.shirt}">
@@ -769,7 +775,7 @@ function bindDress(key, seed, onChange, onReset) {
   const look = looks.get(key)
   const bind = (id, field, num) => { const el = panel.querySelector(id); if (el) el.oninput = (ev) => { look[field] = num ? Number(ev.target.value) : ev.target.value; saveLook(key); onChange() } }
   bind('#fNick', 'nick'); bind('#fHair', 'hair'); bind('#fSkin', 'skin'); bind('#fShirt', 'shirt'); bind('#fAcc', 'acc')
-  bind('#fBody', 'body', true); bind('#fHairStyle', 'hairStyle', true); bind('#fOutfit', 'outfit', true)
+  bind('#fBody', 'body', true); bind('#fHairStyle', 'hairStyle', true); bind('#fOutfit', 'outfit', true); bind('#fAccColor', 'accColor')
   panel.querySelector('#fReset').onclick = () => { resetLook(key, seed); onChange(); onReset() }
 }
 function renderSubPanel(e) {
@@ -1022,7 +1028,23 @@ for (const [text, x, y] of [['작업실', 4, 55], [`${OWNER} 호출 벨`, 388, 4
   const z = document.createElement('div'); z.className = 'zone'; z.textContent = text; z.dataset.x = x; z.dataset.y = y; labels.append(z); zoneEls.push(z)
 }
 // 주소에 ?demo=1 을 붙이면 가짜 세션으로 자리와 가구 배치를 한눈에 확인할 수 있다.
-const DEMO = new URLSearchParams(location.search).has('demo')
+const DEMO = new URLSearchParams(location.search).get('demo') // '1' 은 가득 찬 정지 장면, 'story' 는 22초짜리 시연
+const CAPTURE = new URLSearchParams(location.search).has('capture') // 밖에서 __tick 으로 시간을 밀며 한 장씩 찍는 용도
+const STORY_LEN = 22
+// 시연 장면: 출근, 조수 합류, 호출 벨로 이동, 일을 끝내고 휴게실로. sec 은 장면이 시작된 뒤 흐른 초.
+function demoStory(sec) {
+  const now = Date.now(), H1 = 3.6e6
+  const mk = (id, name, state, detail, extra = {}) => ({ id, kind: 'bg', name, state, detail, intent: '', tokens: 40000, project: 'demo', worktree: null, createdAt: now - H1, updatedAt: now, helpers: 0, links: [], subagents: [], permissionMode: 'auto', lastText: null, pending: null, tool: 'Bash', phase: 'tool', ...extra })
+  const rest = (i, hoursAgo, tokens) => mk('rest' + i, ['주간 리포트 정리', '이미지 최적화', '의존성 업데이트', '테스트 보강', 'API 문서 갱신', '접근성 점검'][i], 'done', '끝났어요', { updatedAt: now - hoursAgo * H1, tokens, phase: null, tool: null })
+  const subs = sec >= 3 && sec < 14 ? [{ id: 'fe', type: 'frontend-developer', description: '결제 버튼 컴포넌트 분리', at: now }, { id: 'ex', type: 'Explore', description: '결제 관련 파일 찾기', at: now }] : []
+  const list = [
+    sec < 14 ? mk('pay', '결제 페이지 리팩터링', 'working', '컴포넌트를 나누는 중', { subagents: subs, tokens: 900000, phase: Math.floor(sec) % 4 < 2 ? 'tool' : 'thinking', tool: 'Edit' }) : mk('pay', '결제 페이지 리팩터링', 'done', 'PR을 올렸어요', { tokens: 960000, phase: null }),
+    sec < 8 ? mk('login', '로그인 버그 수정', 'working', '테스트 돌리는 중', { tokens: 120000 }) : mk('login', '로그인 버그 수정', 'blocked', '운영에 바로 배포할까요?', { tokens: 130000, lastText: '수정은 끝났습니다. 운영에 바로 배포할까요, 내일 오전에 할까요?' }),
+    rest(0, 2, 300000), rest(1, 30, 80000), rest(2, 5, 1500000), rest(3, 50, 20000), rest(4, 1, 600000), rest(5, 80, 9000),
+  ]
+  if (sec >= 1) list.push(mk('readme', 'README 번역', 'working', '영어로 옮기는 중', { tokens: 15000, phase: 'thinking' }))
+  return list
+}
 function demoSessions() {
   const mk = (i, state, extra = {}) => ({ id: 'demo' + i, kind: 'bg', name: `demo session ${i}`, state, detail: state === 'working' ? 'building the pixel office' : state === 'blocked' ? 'waiting for a decision' : '', intent: '', tokens: 3000 * (i + 1) ** 2, project: 'demo', worktree: null, createdAt: Date.now() - 3.6e6, updatedAt: Date.now() - (i % 3 ? 2 : 40) * 3.6e6, helpers: 0, links: [], subagents: [], permissionMode: i % 2 ? 'auto' : 'default', lastText: state === 'blocked' ? '배포 전에 확인이 필요합니다.\n1) 지금 바로 배포\n2) 내일 오전에 배포\n어느 쪽으로 할까요?' : null, pending: null, tool: 'Bash', phase: i % 2 ? 'tool' : 'thinking', ...extra })
   const sub = (id, type) => ({ id, type, description: 'demo task', at: Date.now() })
@@ -1034,7 +1056,13 @@ function demoAgents() {
   const mk = (type, scope, count, days, active) => ({ type, scope, description: scope === 'builtin' ? '' : `${type} 역할의 데모 에이전트입니다.`, count, lastAt: Date.now() - days * 864e5, active: active ? [{ sessionName: active }] : [], byProject: { demo: count }, recent: [...Array(Math.min(count, 4)).keys()].map((k) => ({ description: `demo task ${k + 1}`, at: Date.now() - (days + k) * 864e5, project: 'demo', sessionName: 'demo session 0' })) })
   return [mk('frontend-developer', 'user', 8, 0, 'demo session 0'), mk('Explore', 'builtin', 7, 0, 'demo session 0'), mk('general-purpose', 'builtin', 24, 0, 'demo session 2'), mk('data-scientist', 'user', 15, 4), mk('senior-pd', 'user', 5, 5), mk('backend-developer', 'user', 6, 6), mk('senior-pm', 'user', 0, 0)].map((a) => (a.count ? a : { ...a, lastAt: null, recent: [] }))
 }
+let storyStart = performance.now(), lastStorySec = 0
 async function poll() {
+  if (DEMO === 'story') { // 실제 시간으로 장면을 반복 재생한다
+    const sec = ((performance.now() - storyStart) / 1000) % (STORY_LEN + 2)
+    if (sec < lastStorySec) { for (const e of ents.values()) { e.tag.remove(); e.bubble.remove() } ents.clear(); for (const k in slots) slots[k] = []; firstLoad = true }
+    lastStorySec = sec; setAgents(demoAgents()); return sync(demoStory(sec))
+  }
   if (DEMO) { setAgents(demoAgents()); return sync(demoSessions()) }
   try {
     const res = await fetch('/api/sessions', { cache: 'no-store' })
@@ -1050,8 +1078,18 @@ addEventListener('resize', fit)
 paintSound(); fit(); paintBackground(); tickClock()
 setInterval(paintBackground, 30000); setInterval(tickClock, 1000)
 { const side = new URLSearchParams(location.search).get('pan'); if (side) { panTo(side === 'right' ? W : 0, 600000); view.x = view.target } } // 확인용: ?pan=right
-poll(); setInterval(poll, 2000)
-requestAnimationFrame(frame)
+if (CAPTURE) { // 시간을 밖에서 밀어 가며 한 장씩 그린다(GIF 제작용). 0.5초마다 장면 데이터를 다시 읽는다.
+  SPEED = 85
+  let simT = 0, lastHalf = -1
+  window.__ready = () => spritesReady && Boolean(atlas)
+  window.__tick = (ms) => {
+    simT += ms
+    const half = Math.floor(simT / 500)
+    if (half !== lastHalf) { lastHalf = half; setAgents(demoAgents()); sync(demoStory(simT / 1000)) }
+    frame(simT, true)
+    return simT
+  }
+} else { poll(); setInterval(poll, DEMO === 'story' ? 500 : 2000); requestAnimationFrame(frame) }
 </script>
 </body>
 </html>
