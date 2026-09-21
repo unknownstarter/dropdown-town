@@ -107,7 +107,7 @@ claude --bg "이 폴더에 뭐가 있는지 요약해줘"
 | --- | --- |
 | 새 버전은 어떻게 받나요 | 터미널에 `cd ~/dropdown-town && git pull && ./build-app.sh` 를 붙여 넣고, 앱을 껐다 켭니다. |
 | 지우고 싶어요 | 앱을 끄고 홈 폴더의 `dropdown-town` 폴더와 응용 프로그램의 앱을 휴지통에 넣으면 끝입니다. 다른 곳에 남기는 것이 없습니다. |
-| "서버와 연결이 끊겼어요"라고 나와요 | Node 를 새로 설치했거나 바꾼 뒤라면 `cd ~/dropdown-town && ./build-app.sh` 를 다시 실행합니다. |
+| "서버와 연결이 끊겼어요"라고 나와요 | 앱이 뒤에서 돌리는 서버가 꺼진 것입니다. 앱이 몇 초 안에 스스로 다시 켭니다. 계속 그렇다면 앱을 완전히 종료(⌘Q)했다가 다시 열고, Node 를 새로 설치했거나 바꾼 뒤라면 `cd ~/dropdown-town && ./build-app.sh` 를 다시 실행합니다. |
 | 캐릭터는 나오는데 말풍선 내용이 없어요 | 하는 일 요약과 토큰 수는 백그라운드 세션(`claude --bg`)에서만 나옵니다. 터미널에서 직접 연 세션은 캐릭터만 나옵니다. |
 | Claude 데스크톱 앱에서 한 것도 나오나요 | 일반 채팅과 클라우드에서 도는 세션은 나오지 않습니다(내 맥에 기록이 남지 않습니다). 데스크톱 앱의 Code 기능을 "로컬"로 돌린 세션은 터미널과 같은 폴더에 기록되므로 나올 수 있지만, 아직 직접 확인하지는 못했습니다. 하는 일 요약까지 가장 잘 보이는 것은 터미널의 `claude --bg` 세션입니다. |
 | ChatGPT, Gemini 같은 다른 AI 는요 | 아직 Claude Code 만 됩니다. 로드맵에 있습니다. |
@@ -261,7 +261,7 @@ claude --bg "Summarize what is in this folder"
 | --- | --- |
 | How do I update | Paste `cd ~/dropdown-town && git pull && ./build-app.sh`, then restart the app. |
 | How do I remove it | Quit the app and move the `dropdown-town` folder and the app to the Trash. Nothing else is left behind. |
-| It says it cannot reach the server | If you installed or changed Node, run `cd ~/dropdown-town && ./build-app.sh` again. |
+| It says it cannot reach the server | The background server stopped. The app restarts it within a few seconds. If it persists, quit the app fully (⌘Q) and reopen it. If you installed or changed Node, run `cd ~/dropdown-town && ./build-app.sh` again. |
 | Characters appear but bubbles are empty | Work summaries and token counts only exist for background sessions (`claude --bg`). |
 | Does work from the Claude desktop app show up | Regular chats and cloud sessions do not (nothing is stored on your Mac). Local sessions from the desktop app's Code tab are stored in the same folder as the terminal CLI, so they may appear, but this has not been verified yet. Terminal `claude --bg` sessions give the richest view. |
 | Other AIs such as ChatGPT or Gemini | Claude Code only for now. It is on the roadmap. |

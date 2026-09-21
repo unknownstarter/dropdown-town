@@ -10,6 +10,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
   var webView: WKWebView!
   var server: Process?
   var pinItem: NSMenuItem!
+  var quitting = false
+  var restartDelay: TimeInterval = 1
 
   func applicationDidFinishLaunching(_ note: Notification) {
     startServer()
@@ -56,7 +58,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     proc.environment = ProcessInfo.processInfo.environment.merging(["PORT": String(port)]) { _, new in new }
     proc.standardOutput = FileHandle.nullDevice
     proc.standardError = FileHandle.nullDevice
-    // 같은 포트에 이미 서버가 떠 있으면 새 프로세스는 바로 끝나고, 화면은 기존 서버를 그대로 쓴다.
+    // 서버가 죽으면(직접 종료됐거나 오류로) 다시 띄운다. 같은 포트에 이미 다른 서버가 떠 있으면 새 프로세스는 바로 끝나는데,
+    // 그때는 화면이 그 서버를 그대로 쓰므로 점점 간격을 늘려 가며(최대 15초) 확인만 계속한다.
+    let startedAt = Date()
+    proc.terminationHandler = { [weak self] _ in
+      DispatchQueue.main.async {
+        guard let self = self, !self.quitting else { return }
+        self.restartDelay = Date().timeIntervalSince(startedAt) > 10 ? 1 : min(self.restartDelay * 2, 15)
+        DispatchQueue.main.asyncAfter(deadline: .now() + self.restartDelay) { if !self.quitting { self.startServer() } }
+      }
+    }
     try? proc.run()
     server = proc
   }
@@ -116,7 +127,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
   }
 
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
-  func applicationWillTerminate(_ note: Notification) { server?.terminate() }
+  func applicationWillTerminate(_ note: Notification) { quitting = true; server?.terminate() }
 }
 
 let app = NSApplication.shared

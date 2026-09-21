@@ -830,6 +830,7 @@ let knownDirs = []
 async function act(name, body) {
   try {
     const res = await fetch('/api/action/' + name, { method: 'POST', headers: { 'content-type': 'application/json', 'x-town-token': TOKEN }, body: JSON.stringify(body) })
+    if (res.status === 403) { toast('서버가 다시 켜져서 화면을 새로 고칩니다. 한 번 더 눌러 주세요.'); setTimeout(() => location.reload(), 1200); return false } // 서버가 재시작되면 토큰이 바뀐다
     const out = await res.json()
     toast(out.ok ? (out.output ? clip(out.output, 160) : '완료했어요') : '실패: ' + clip(out.output || '알 수 없는 오류', 200))
     poll()
