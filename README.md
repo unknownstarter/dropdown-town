@@ -108,7 +108,7 @@ node server.mjs
 ### 기여, 라이선스, 크레딧
 
 - 기여는 언제나 환영합니다. 방법은 [CONTRIBUTING.md](CONTRIBUTING.md) 에 있습니다.
-- 코드는 MIT 라이선스입니다([LICENSE](LICENSE)).
+- 코드는 MIT 라이선스입니다([LICENSE](LICENSE)). 에셋과 글꼴의 라이선스는 [NOTICE.md](NOTICE.md) 에 정리했습니다.
 - 캐릭터와 가구 그림은 JIK-A-4 의 [MetroCity 캐릭터 팩](https://jik-a-4.itch.io/metrocity-free-topdown-character-pack)과 [MetroCity 인테리어 팩](https://jik-a-4.itch.io/metrocity)이며 둘 다 CC0 입니다. 오락기, 자판기, 수족관, 서버 랙, 고양이, 네온사인은 코드로 직접 그렸습니다.
 - 글꼴은 [Galmuri](https://github.com/quiple/galmuri)(OFL-1.1)입니다.
 - 기획과 방향은 사람이, 코드는 Claude Code 가 썼습니다.
@@ -217,7 +217,7 @@ The goal is **access to your sessions from anywhere, built around a virtual offi
 ### Contributing, license, credits
 
 - Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
-- Code is MIT licensed ([LICENSE](LICENSE)).
+- Code is MIT licensed ([LICENSE](LICENSE)). Asset and font licenses are summarized in [NOTICE.md](NOTICE.md).
 - Character and furniture art is by JIK-A-4: the [MetroCity character pack](https://jik-a-4.itch.io/metrocity-free-topdown-character-pack) and the [MetroCity interior pack](https://jik-a-4.itch.io/metrocity), both CC0. The arcade cabinets, vending machine, aquarium, server rack, cat and neon sign are drawn in code.
 - Font: [Galmuri](https://github.com/quiple/galmuri) (OFL-1.1).
 - Direction and design by a human, code written with Claude Code.
