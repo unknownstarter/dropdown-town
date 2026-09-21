@@ -60,7 +60,7 @@
 <header>
   <h1><span>*</span> 클로드 타운</h1>
   <div class="chip work">일하는 중 <b id="nWork">0</b></div>
-  <div class="chip help">마스터 기다리는 중 <b id="nHelp">0</b></div>
+  <div class="chip help"><span id="ownerChip">마스터 기다리는 중</span> <b id="nHelp">0</b></div>
   <div class="chip rest">쉬는 중 <b id="nRest">0</b></div>
   <div class="grow"></div>
   <span id="clock"></span>
@@ -75,6 +75,10 @@
 
 <script>
 const W = 480, H = 300, SPEED = 60
+// 화면에서 사용자를 부르는 호칭. 주소에 ?owner=대장 처럼 붙이면 바뀌고 그 뒤로 기억한다.
+let OWNER = '마스터'
+try { const q = new URLSearchParams(location.search).get('owner'); if (q) localStorage.setItem('town.owner', q.slice(0, 8)); OWNER = localStorage.getItem('town.owner') || OWNER } catch {}
+document.getElementById('ownerChip').textContent = `${OWNER} 기다리는 중`
 const cv = document.getElementById('cv'), ctx = cv.getContext('2d')
 ctx.imageSmoothingEnabled = false
 const labels = document.getElementById('labels'), panel = document.getElementById('panel')
@@ -504,7 +508,7 @@ function refreshLabels(e) {
   e.tag.classList.toggle('sel', selected === e.id)
   let html = ''
   if (e.zone === 'work') { const tk = s.phase === 'tool' ? toolKo(s.tool) : s.phase === 'thinking' ? '생각 중' : ''; html = (tk ? `<em>[${esc(tk)}]</em> ` : '') + esc(s.detail || '') }
-  else if (e.zone === 'help') html = esc(s.detail || '마스터를 기다리고 있어요')
+  else if (e.zone === 'help') html = esc(s.detail || '답을 기다리고 있어요')
   e.bubble.className = 'bubble' + (e.zone === 'help' ? ' help' : '')
   e.bubble.innerHTML = html ? `<span>${html}</span>` : ''
   e.bubble.dataset.empty = html ? '' : '1'
@@ -521,7 +525,7 @@ function sync(list) {
       e.data = s
       if (zone !== e.zone && !e.leaving) {
         moveTo(e, zone, false)
-        if (zone === 'help') { toast(`‘${e.look.nick || s.name}’ 이(가) 마스터를 찾고 있어요`); beep(880) }
+        if (zone === 'help') { toast(`‘${e.look.nick || s.name}’ 이(가) 호출 벨을 눌렀어요`); beep(880) }
         if (zone === 'rest') { toast(`‘${e.look.nick || s.name}’ 작업이 끝났어요`); beep(523) }
       }
     }
@@ -612,7 +616,7 @@ function frame(t) {
 
 /* ---------- 상세 패널 ---------- */
 const ago = (ms) => { if (!ms) return '알 수 없음'; const s = Math.max(0, (Date.now() - ms) / 1000); return s < 60 ? '방금' : s < 3600 ? `${Math.floor(s / 60)}분 전` : s < 86400 ? `${Math.floor(s / 3600)}시간 전` : `${Math.floor(s / 86400)}일 전` }
-const STATE_KO = { work: ['일하는 중', 'var(--work)'], help: ['마스터 기다리는 중', 'var(--help)'], rest: ['쉬는 중', 'var(--rest)'] }
+const STATE_KO = { work: ['일하는 중', 'var(--work)'], help: [`${OWNER} 기다리는 중`, 'var(--help)'], rest: ['쉬는 중', 'var(--rest)'] }
 function renderPanel(full = true) {
   const e = ents.get(selected); if (!e) return
   if (isSub(e)) return renderSubPanel(e)
@@ -726,7 +730,7 @@ function fit() {
   cv.style.width = W * scale + 'px'; cv.style.height = H * scale + 'px'
   labels.querySelectorAll('.zone').forEach((z) => { z.style.left = z.dataset.x * scale + 'px'; z.style.top = z.dataset.y * scale + 'px' })
 }
-for (const [text, x, y] of [['작업실', 4, 55], ['마스터 호출 벨', 388, 40], ['휴게실', 4, 217]]) {
+for (const [text, x, y] of [['작업실', 4, 55], [`${OWNER} 호출 벨`, 388, 40], ['휴게실', 4, 217]]) {
   const z = document.createElement('div'); z.className = 'zone'; z.textContent = text; z.dataset.x = x; z.dataset.y = y; labels.append(z)
 }
 // 주소에 ?demo=1 을 붙이면 가짜 세션으로 자리와 가구 배치를 한눈에 확인할 수 있다.
