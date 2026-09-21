@@ -1,6 +1,6 @@
 # Dropdown Town
 
-**내 컴퓨터에서 일하는 Claude Code 세션들을 픽셀 사무실로 구경하는 앱** (앱 안에서의 이름은 "클로드 타운"입니다)
+**내 컴퓨터에서 일하는 Claude Code 세션들을 픽셀 사무실로 구경하는 앱**
 
 **Watch your Claude Code sessions work in a tiny pixel office.** [English guide below](#english)
 
@@ -24,7 +24,17 @@ Claude Code 로 여러 세션을 동시에 돌리다 보면 누가 일하고 있
 | 휴게실 | 일을 끝냈습니다. 소파에서 TV 를 보거나, 오락기를 하거나, 오래됐으면 잡니다. |
 | 왕관 | 터미널에서 내가 직접 연 세션입니다. |
 
-캐릭터를 누르면 받은 요청, 토큰 수(레벨), PR 링크가 나오고 별명과 생김새를 바꿀 수 있습니다.
+캐릭터를 누르면 받은 요청, 토큰 수(레벨), PR 링크, 권한 모드(오토 모드인지)가 나오고 별명과 생김새를 바꿀 수 있습니다.
+
+### 사무실에서 세션 다루기
+
+| 하고 싶은 일 | 방법 |
+| --- | --- |
+| 세션이 나에게 뭘 요청했는지 보기 | 호출 벨 앞 캐릭터를 누르면 요청한 내용 전문이 나옵니다. |
+| 요청에 답하기(수락, 거절 포함) | "터미널에서 열어 답하기"를 누르면 터미널 앱에 그 세션이 열립니다. Claude Code 가 밖에서 답하는 공식 방법을 제공하지 않아, 답은 Claude Code 화면에서 직접 합니다. |
+| 일하는 세션 멈추기 | 작업실 캐릭터를 누르고 "세션 멈추기". 대화는 보존되어 나중에 이어 갈 수 있습니다. |
+| 끝난 세션 지우기 | 휴게실 캐릭터를 누르고 "세션 지우기". push 하지 않은 커밋이 있는 워크트리는 지워지지 않습니다. |
+| 새 세션 시작하기 | 오른쪽 위 "+ 새 세션"에서 프로젝트를 고르고 시킬 일을 적습니다. |
 
 
 ### 설치하기
@@ -53,10 +63,10 @@ cd dropdown-town
 
 ```bash
 ./build-app.sh
-open "클로드 타운.app"
+open "Dropdown Town.app"
 ```
 
-- 폴더에 `클로드 타운.app` 이 생깁니다. 응용 프로그램 폴더나 Dock 으로 끌어다 놓으면 됩니다.
+- 폴더에 `Dropdown Town.app` 이 생깁니다. 응용 프로그램 폴더나 Dock 으로 끌어다 놓으면 됩니다.
 - 메뉴 "보기"에서 **항상 위에 두기**(Cmd+T), **작은 창으로**(Cmd+1)를 쓸 수 있습니다. 코드 편집기 옆에 띄워 두기 좋습니다.
 
 방법 B. 브라우저로 보기
@@ -87,7 +97,9 @@ node server.mjs
 
 ### 안전한가요
 
-- **읽기만 합니다.** `~/.claude` 폴더의 세션 상태 파일을 읽을 뿐 아무것도 쓰지 않고, 세션을 끄거나 켜지도 않습니다. 대신 캐릭터 패널에 `claude attach`, `claude logs`, `claude stop` 명령을 복사 버튼으로 보여줍니다.
+- **파일은 읽기만 합니다.** `~/.claude` 폴더의 세션 상태 파일을 읽을 뿐 아무것도 쓰지 않습니다.
+- **세션 제어는 공식 명령만 부릅니다.** 멈추기, 지우기, 새 세션, 터미널에서 열기는 각각 `claude stop`, `claude rm`, `claude --bg`, `claude attach` 를 그대로 실행합니다. 멈추기와 지우기는 확인 창을 거칩니다.
+- **다른 웹페이지가 몰래 호출할 수 없습니다.** 제어 요청에는 서버가 뜰 때마다 새로 만드는 토큰이 필요하고, 세션 id 와 상태, 프로젝트 폴더를 서버가 다시 확인합니다.
 - **내 컴퓨터 안에서만 돕니다.** 서버는 `127.0.0.1` 에만 열리고 세션 정보는 밖으로 나가지 않습니다(글꼴만 CDN 에서 받습니다).
 - 읽는 파일들은 Claude Code 의 공개 규격이 아닙니다. Claude Code 2.1.27x 에서 확인했고, 버전이 오르면 `server.mjs` 를 손봐야 할 수 있습니다.
 
@@ -99,7 +111,7 @@ node server.mjs
 | 단계 | 내용 | 상태 |
 | --- | --- | --- |
 | 1 | 내 맥에서 도는 세션과 서브에이전트를 사무실로 구경하기 | 지금 여기 |
-| 2 | 사무실 안에서 세션 다루기 (이어서 보기, 멈추기, 새 일 시키기) | 예정 |
+| 2 | 사무실 안에서 세션 다루기 (요청 내용 보기, 멈추기, 지우기, 새 일 시키기, 터미널에서 열기) | 첫 버전 완료. 사무실 안에서 바로 답하기는 예정 |
 | 3 | 사무실 안에 시뮬레이터(웹, 앱)와 브라우저 넣기. 에이전트가 만든 결과를 그 자리에서 확인 | 예정 |
 | 4 | 어디서든 접근. 휴대폰이나 다른 컴퓨터에서 내 사무실에 들어가기 | 예정 |
 | 5 | Windows, Linux 지원과 다국어 | 예정 |
@@ -131,7 +143,9 @@ When you run several Claude Code sessions at once, it is easy to lose track of w
 | Lounge | Finished. Watching TV, playing the arcade, or asleep if it has been a while. |
 | Crown | A session you opened yourself in a terminal. |
 
-Click a character to see its prompt, token count (shown as a level), PR links, and to change its nickname and look. The UI is in Korean for now. Translations are welcome.
+Click a character to see its prompt, token count (shown as a level), PR links, permission mode (auto or not), and to change its nickname and look.
+
+You can also manage sessions from the office: read what a blocked session is asking, open it in Terminal to answer (accept or deny happens in Claude Code itself, since there is no official way to answer from outside), stop a working session, delete a finished one, and start a new one with the "+ 새 세션" button. The UI is in Korean for now. Translations are welcome.
 
 > **macOS only** for now. Unofficial project, not affiliated with or endorsed by Anthropic.
 
@@ -162,10 +176,10 @@ Option A. As a Mac app (recommended)
 
 ```bash
 ./build-app.sh
-open "클로드 타운.app"
+open "Dropdown Town.app"
 ```
 
-- This creates `클로드 타운.app` in the folder. Drag it to Applications or the Dock.
+- This creates `Dropdown Town.app` in the folder. Drag it to Applications or the Dock.
 - The View menu has **Always on top** (Cmd+T) and **Compact window** (Cmd+1), handy next to your editor.
 
 Option B. In a browser
@@ -196,7 +210,9 @@ node server.mjs
 
 ### Is it safe
 
-- **Read-only.** It reads session state files under `~/.claude`, writes nothing, and never starts or stops sessions. The character panel shows `claude attach`, `claude logs` and `claude stop` commands with copy buttons instead.
+- **Files are read-only.** It reads session state files under `~/.claude` and writes nothing there.
+- **Session control uses official commands only.** Stop, delete, new session and open-in-Terminal run `claude stop`, `claude rm`, `claude --bg` and `claude attach` as is. Stop and delete ask for confirmation first.
+- **Other web pages cannot call it.** Control requests need a token that is regenerated on every server start, and the server re-checks the session id, its state and the project folder.
 - **Local only.** The server binds to `127.0.0.1` and no session data leaves your machine. Only the font is loaded from a CDN.
 - The files it reads are not a public Claude Code format. Verified on Claude Code 2.1.27x. A future version may require changes in `server.mjs`.
 
@@ -208,7 +224,7 @@ The goal is **access to your sessions from anywhere, built around a virtual offi
 | Stage | What | Status |
 | --- | --- | --- |
 | 1 | Watch local sessions and subagents in the office | You are here |
-| 2 | Control sessions from the office (attach, stop, start new work) | Planned |
+| 2 | Control sessions from the office (read requests, stop, delete, start new work, open in Terminal) | First version done. Answering from inside the office is planned |
 | 3 | Simulators (web, app) and a browser inside the office, to check what agents built on the spot | Planned |
 | 4 | Access from anywhere: enter your office from a phone or another computer | Planned |
 | 5 | Windows and Linux support, more languages | Planned |

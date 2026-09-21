@@ -1,10 +1,10 @@
 #!/bin/zsh
-# 클로드 타운 맥 앱을 만든다. 결과물: ./클로드 타운.app
+# Dropdown Town 맥 앱을 만든다. 결과물: ./Dropdown Town.app
 # server.mjs 나 index.html 을 고친 뒤에는 이 스크립트를 다시 돌려야 앱에 반영된다.
 set -euo pipefail
 cd "$(dirname "$0")"
 
-APP="클로드 타운.app"
+APP="Dropdown Town.app"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -33,8 +33,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleName</key><string>클로드 타운</string>
-  <key>CFBundleDisplayName</key><string>클로드 타운</string>
+  <key>CFBundleName</key><string>Dropdown Town</string>
+  <key>CFBundleDisplayName</key><string>Dropdown Town</string>
   <key>CFBundleIdentifier</key><string>local.claude-town</string>
   <key>CFBundleExecutable</key><string>ClaudeTown</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>

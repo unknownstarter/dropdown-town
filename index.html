@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>클로드 타운</title>
+<title>Dropdown Town</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/galmuri@latest/dist/galmuri.css">
 <style>
   :root { --bg:#1b1726; --ink:#f4efe6; --dim:#a79fb8; --panel:#2a2438; --line:#463d5c; --work:#ffb454; --help:#ff6b7a; --rest:#7fd1a8; }
@@ -51,6 +51,20 @@
   .cmds div { display:grid; grid-template-columns:1fr auto; gap:2px 8px; margin-bottom:8px; align-items:center; }
   .cmds span { grid-column:1 / 3; color:var(--dim); font-size:11px; }
   .cmds code { background:var(--bg); border:2px solid var(--line); border-radius:4px; padding:3px 6px; font-family:inherit; user-select:all; }
+  .ask { margin-top:10px; background:var(--bg); border:2px solid var(--line); border-radius:4px; padding:8px; max-height:220px; overflow:auto; white-space:pre-wrap; word-break:break-word; line-height:1.5; font-size:12px; }
+  .ask.help { border-color:var(--help); }
+  .hint { color:var(--dim); font-size:11px; line-height:1.5; margin:8px 0 0; }
+  .acts { display:flex; flex-wrap:wrap; gap:6px; }
+  button.danger:hover { border-color:var(--help); color:var(--help); }
+  button.primary { border-color:var(--work); color:var(--work); }
+  details { margin-top:10px; } summary { color:var(--dim); font-size:11px; cursor:pointer; margin-bottom:8px; }
+  #modal { position:fixed; inset:0; background:rgba(10,8,16,.7); display:none; align-items:center; justify-content:center; z-index:10; }
+  #modal .box { width:min(440px, calc(100vw - 32px)); background:var(--panel); border:2px solid var(--line); border-radius:6px; padding:16px; }
+  #modal h2 { font-size:14px; margin:0 0 10px; } #modal p { margin:0 0 12px; line-height:1.55; color:var(--ink); }
+  #modal label { display:block; color:var(--dim); font-size:11px; margin:10px 0 4px; }
+  #modal select, #modal textarea { width:100%; font:inherit; color:var(--ink); background:var(--bg); border:2px solid var(--line); border-radius:4px; padding:6px; }
+  #modal textarea { height:110px; resize:vertical; }
+  #modal .row { display:flex; justify-content:flex-end; gap:8px; margin-top:14px; }
   #toasts { position:fixed; left:50%; bottom:18px; transform:translateX(-50%); display:flex; flex-direction:column; gap:6px; align-items:center; }
   .toast { background:#fffdf6; color:#2a2233; border:2px solid #2a2233; border-radius:6px; padding:6px 12px; }
   #offline { display:none; position:fixed; top:60px; left:50%; transform:translateX(-50%); background:var(--help); color:#1b1726; padding:4px 12px; border-radius:4px; }
@@ -58,19 +72,20 @@
 </head>
 <body>
 <header>
-  <h1><span>*</span> 클로드 타운</h1>
+  <h1><span>*</span> Dropdown Town</h1>
   <div class="chip work">일하는 중 <b id="nWork">0</b></div>
   <div class="chip help"><span id="ownerChip">마스터 기다리는 중</span> <b id="nHelp">0</b></div>
   <div class="chip rest">쉬는 중 <b id="nRest">0</b></div>
   <div class="grow"></div>
   <span id="clock"></span>
-  <button id="newCmd" title="터미널에 붙여 넣으면 새 백그라운드 세션이 시작돼요">새 세션 명령 복사</button>
+  <button id="newBtn">+ 새 세션</button>
   <button id="style">캐릭터: 도트</button>
   <button id="sound">알림음 꺼짐</button>
 </header>
 <main><div id="stage"><canvas id="cv" width="480" height="300"></canvas><div id="labels"></div></div></main>
 <aside id="panel"></aside>
 <div id="toasts"></div>
+<div id="modal"><div class="box"></div></div>
 <div id="offline">서버와 연결이 끊겼어요. node server.mjs 가 켜져 있는지 확인해 주세요.</div>
 
 <script>
@@ -125,7 +140,7 @@ function takeSlot(zone, id) {
 }
 function freeSlot(e) { if (e.zone && slots[e.zone]) slots[e.zone][e.slot] = null }
 
-const zoneOf = (s) => (s.state === 'working' ? 'work' : s.state === 'done' || s.state === 'idle' ? 'rest' : 'help')
+const zoneOf = (s) => (s.state === 'working' ? 'work' : ['done', 'idle', 'stopped'].includes(s.state) ? 'rest' : 'help') // 모르는 상태는 눈에 띄게 호출 구역으로
 
 function route(from, to) {
   const pts = [], fromRoom = from.room || 'work', toRoom = to.room || 'work'
@@ -324,12 +339,13 @@ function paintBackground() {
   P(c, 'paintb_0_0', 96, 181); P(c, 'paint_0_4', 8, 186)
 }
 
-const NEON = { C: '111100100100111', L: '100100100100111', A: '010101111101101', U: '101101101101111', D: '110101101101110', E: '111100111100111' }
+const NEON = { D: '110101101101110', R: '110101110101101', O: '111101101101111', P: '111101111100100', W: '101101111111101', N: '111101101101101' }
 function drawNeon(c, x, y, t) {
   const dim = Math.floor(t / 90) % 53 === 0, a = dim ? 0.35 : 0.8 + 0.2 * Math.sin(t / 400)
-  R(c, x - 4, y - 4, 54, 18, `rgba(255,138,61,${0.1 * a})`); R(c, x - 2, y - 2, 50, 14, `rgba(255,138,61,${0.12 * a})`)
+  R(c, x - 5, y - 4, 41, 30, '#2a2233'); R(c, x - 4, y - 3, 39, 28, '#1b1726') // 밝은 벽에서도 잘 보이게 어두운 판을 댄다
+  R(c, x - 4, y - 3, 39, 28, `rgba(255,138,61,${0.14 * a})`)
   c.globalAlpha = a
-  ;[...'CLAUDE'].forEach((ch, i) => { [...NEON[ch]].forEach((bit, k) => { if (bit === '1') R(c, x + i * 8 + (k % 3) * 2, y + Math.floor(k / 3) * 2, 2, 2, i % 2 ? '#ffd27a' : '#ff8a3d') }) })
+  ;['DROP', 'DOWN'].forEach((word, line) => [...word].forEach((ch, i) => { [...NEON[ch]].forEach((bit, k) => { if (bit === '1') R(c, x + i * 8 + (k % 3) * 2, y + line * 12 + Math.floor(k / 3) * 2, 2, 2, line ? '#ffd27a' : '#ff8a3d') }) }))
   c.globalAlpha = 1
 }
 function drawArcade(c, x, y, t, hue, playing) {
@@ -426,7 +442,7 @@ function drawCat(c, t) {
 function drawProps(items, t) {
   const working = entsIn('work') > 0
   // 벽에 붙은 것들은 캐릭터보다 먼저 그린다
-  items.push({ base: 0, draw: (c) => { drawKanban(c); drawClock(c, 366, 8); drawLights(c, t); drawNeon(c, 196, 192, t); P(c, 'tv_0_2', 34, 185)
+  items.push({ base: 0, draw: (c) => { drawKanban(c); drawClock(c, 366, 8); drawLights(c, t); drawNeon(c, 200, 187, t); P(c, 'tv_0_2', 34, 185)
     R(c, 37, 188, 42, 20, ['#23405e', '#2c4f73', '#1d3550'][Math.floor(t / 300) % 3]); R(c, 36, 214, 46, 8, `rgba(120,180,255,${0.08 + 0.05 * (Math.floor(t / 300) % 3)})`) } })
   items.push({ base: 58, draw: (c) => { P(c, 'shelf_0_3', 248, 6); drawRack(c, 294, 12, t, working) } })
   items.push({ base: 96, draw: (c) => { // 호출 벨
@@ -542,10 +558,12 @@ function sync(list) {
     })
   }
   for (const e of ents.values()) if (!seen.has(e.id) && !e.leaving) leave(e)
+  const preselect = firstLoad && new URLSearchParams(location.search).get('select') // 주소의 ?select=세션id 로 그 캐릭터 패널을 연 채 시작한다
+  if (preselect && ents.has(preselect)) { selected = preselect; renderPanel() }
   firstLoad = false
   const n = { work: entsIn('work'), help: entsIn('help'), rest: entsIn('rest') }
   nWork.textContent = n.work; nHelp.textContent = n.help; nRest.textContent = n.rest
-  document.title = (n.help ? `(${n.help}) ` : '') + '클로드 타운'
+  document.title = (n.help ? `(${n.help}) ` : '') + 'Dropdown Town'
   if (selected && ents.has(selected)) renderPanel(false)
 }
 
@@ -616,6 +634,31 @@ function frame(t) {
 
 /* ---------- 상세 패널 ---------- */
 const ago = (ms) => { if (!ms) return '알 수 없음'; const s = Math.max(0, (Date.now() - ms) / 1000); return s < 60 ? '방금' : s < 3600 ? `${Math.floor(s / 60)}분 전` : s < 86400 ? `${Math.floor(s / 3600)}시간 전` : `${Math.floor(s / 86400)}일 전` }
+const MODE_KO = { auto: '오토 모드 (스스로 판단해서 진행)', default: '기본 (도구를 쓸 때마다 물어봄)', acceptEdits: '파일 수정은 자동 수락', plan: '계획 모드 (실행 전 계획만)', bypassPermissions: '권한 확인 생략' }
+// 호출 벨 앞에 선 세션이 무엇을 기다리는지, 끝난 세션이 마지막에 뭐라고 했는지 보여준다.
+function askBlock(e) {
+  const s = e.data
+  if (e.zone === 'help') {
+    const pending = s.pending ? `허락을 기다리는 도구: [${toolKo(s.pending.name)}] ${s.pending.what}\n\n` : ''
+    const how = s.permissionMode === 'auto'
+      ? '오토 모드라서 도구 권한은 스스로 처리합니다. 지금 멈춘 것은 결정이나 입력이 필요해서예요. "터미널에서 열어 답하기"로 답해 주세요.'
+      : '수락과 거절은 Claude Code 화면에서만 할 수 있어요. "터미널에서 열어 답하기"를 누르면 그 세션이 바로 열립니다.'
+    return `<h3>${OWNER}에게 요청한 내용</h3><div class="ask help">${esc(pending + (s.lastText || s.detail || '기록을 찾지 못했어요'))}</div><p class="hint">${how}</p>`
+  }
+  if (e.zone === 'rest' && (s.lastText || s.result)) return `<h3>마지막으로 한 말</h3><div class="ask">${esc(s.lastText || s.result)}</div>`
+  return ''
+}
+function actsBlock(e) {
+  const s = e.data
+  if (s.kind !== 'bg') return ''
+  const cmds = [['이어서 보기', `claude attach ${s.id}`], ['최근 출력', `claude logs ${s.id}`], ['멈추기', `claude stop ${s.id}`], ['지우기', `claude rm ${s.id}`]]
+  return `<h3>세션 다루기</h3><div class="acts">
+      <button class="primary" data-act="attach">${e.zone === 'help' ? '터미널에서 열어 답하기' : '터미널에서 열기'}</button>
+      ${e.zone === 'work' || e.zone === 'help' ? '<button class="danger" data-act="stop">세션 멈추기</button>' : ''}
+      ${e.zone === 'rest' ? '<button class="danger" data-act="remove">세션 지우기</button>' : ''}
+    </div>
+    <details><summary>터미널 명령으로 직접 하기</summary><div class="cmds">${cmds.map(([label, cmd]) => `<div><span>${label}</span><code>${cmd}</code><button data-copy="${cmd}">복사</button></div>`).join('')}</div></details>`
+}
 const STATE_KO = { work: ['일하는 중', 'var(--work)'], help: [`${OWNER} 기다리는 중`, 'var(--help)'], rest: ['쉬는 중', 'var(--rest)'] }
 function renderPanel(full = true) {
   const e = ents.get(selected); if (!e) return
@@ -624,10 +667,11 @@ function renderPanel(full = true) {
   const links = s.links.slice(-8).map((l) => `<a href="${esc(l.href)}" target="_blank" rel="noreferrer">${esc(l.kind === 'pr' ? 'PR #' + l.id : l.id)}</a>`).join(' ')
   const info = `
     <dl>
-      <dt>상태</dt><dd><span class="badge" style="background:${color}">${label}</span> ${s.kind === 'interactive' ? '(터미널 세션)' : ''}</dd>
+      <dt>상태</dt><dd><span class="badge" style="background:${color}">${s.state === 'stopped' ? '멈춤' : label}</span> ${s.kind === 'interactive' ? '(터미널 세션)' : ''}</dd>
       <dt>지금</dt><dd>${esc(s.detail || '기록 없음')}${s.phase === 'tool' ? ` <span style="color:var(--work)">[${esc(toolKo(s.tool))}]</span>` : ''}</dd>
       ${s.subagents.length ? `<dt>조수</dt><dd>${s.subagents.map((a) => `${esc(a.type)}: ${esc(a.description)}`).join('<br>')}</dd>` : ''}
       ${s.intent ? `<dt>받은 요청</dt><dd>${esc(clip(s.intent, 220))}</dd>` : ''}
+      ${s.permissionMode ? `<dt>권한 모드</dt><dd>${esc(MODE_KO[s.permissionMode] || s.permissionMode)}</dd>` : ''}
       <dt>위치</dt><dd>${esc(s.project || '')}${s.worktree ? '<br>' + esc(s.worktree) : ''}</dd>
       <dt>토큰</dt><dd>${s.tokens.toLocaleString()} (Lv.${level(s.tokens)})</dd>
       <dt>마지막 활동</dt><dd>${ago(s.updatedAt)}</dd>
@@ -635,8 +679,12 @@ function renderPanel(full = true) {
       ${links ? `<dt>링크</dt><dd>${links}</dd>` : ''}
       <dt>세션</dt><dd>${esc(s.id)}</dd>
     </dl>`
-  if (!full && panel.querySelector('#info')) { panel.querySelector('#info').innerHTML = info; panel.querySelector('h2').textContent = e.look.nick || s.name; return }
+  const extraKey = [e.zone, s.lastText, s.pending?.what, s.permissionMode].join('|')
+  if (!full && panel.querySelector('#info') && panel.dataset.extraKey === extraKey) { panel.querySelector('#info').innerHTML = info; panel.querySelector('h2').textContent = e.look.nick || s.name; return }
+  panel.dataset.extraKey = extraKey
   panel.innerHTML = `<button class="x">×</button><h2></h2><div id="info">${info}</div>
+    ${askBlock(e)}
+    ${actsBlock(e)}
     <h3>캐릭터 꾸미기</h3>
     <div class="dress">
       <label>별명</label><input type="text" id="fNick" maxlength="14" placeholder="${esc(clip(s.name, 14))}" value="${esc(e.look.nick)}">
@@ -650,15 +698,12 @@ function renderPanel(full = true) {
       <label>옷</label><input type="color" id="fShirt" value="${e.look.shirt}">
       <label>장식</label><select id="fAcc">${Object.entries(ACCS).map(([k, v]) => `<option value="${k}"${k === e.look.acc ? ' selected' : ''}>${v}</option>`).join('')}</select>`}
       <span></span><button id="fReset">처음 모습으로</button>
-    </div>
-    ${s.kind === 'bg' ? `<h3>세션 다루기 (터미널에 붙여 넣으세요)</h3>
-    <div class="cmds">
-      ${[['이어서 보기', `claude attach ${s.id}`], ['최근 출력', `claude logs ${s.id}`], ['멈추기 (대화는 보존)', `claude stop ${s.id}`]].map(([label, cmd]) => `<div><span>${label}</span><code>${cmd}</code><button data-copy="${cmd}">복사</button></div>`).join('')}
-    </div>` : ''}`
+    </div>`
   panel.querySelector('h2').textContent = e.look.nick || s.name
   panel.style.display = 'block'
   panel.querySelector('.x').onclick = closePanel
   panel.querySelectorAll('[data-copy]').forEach((b) => { b.onclick = () => copyText(b.dataset.copy, b) })
+  panel.querySelectorAll('[data-act]').forEach((b) => { b.onclick = () => doAct(b.dataset.act, e) })
   const bind = (id, key, num) => { const el = panel.querySelector(id); if (!el) return; el.oninput = (ev) => { e.look[key] = num ? Number(ev.target.value) : ev.target.value; e.sheet = null; saveLook(e); refreshLabels(e); panel.querySelector('h2').textContent = e.look.nick || s.name } }
   bind('#fNick', 'nick'); bind('#fHair', 'hair'); bind('#fSkin', 'skin'); bind('#fShirt', 'shirt'); bind('#fAcc', 'acc')
   bind('#fBody', 'body', true); bind('#fHairStyle', 'hairStyle', true); bind('#fOutfit', 'outfit', true)
@@ -695,6 +740,53 @@ cv.addEventListener('click', (ev) => {
   selected = e.id; if (prev) refreshLabels(prev); refreshLabels(e); renderPanel()
 })
 
+/* ---------- 세션 제어 ---------- */
+// 서버가 화면에 심어 준 토큰. 세션을 바꾸는 요청에는 이 값이 있어야 한다.
+const TOKEN = '__TOWN_TOKEN__'
+let knownDirs = []
+async function act(name, body) {
+  try {
+    const res = await fetch('/api/action/' + name, { method: 'POST', headers: { 'content-type': 'application/json', 'x-town-token': TOKEN }, body: JSON.stringify(body) })
+    const out = await res.json()
+    toast(out.ok ? (out.output ? clip(out.output, 160) : '완료했어요') : '실패: ' + clip(out.output || '알 수 없는 오류', 200))
+    poll()
+    return out.ok
+  } catch { toast('서버에 요청하지 못했어요'); return false }
+}
+const modal = document.getElementById('modal'), modalBox = modal.querySelector('.box')
+function closeModal() { modal.style.display = 'none'; modalBox.innerHTML = '' }
+modal.addEventListener('click', (ev) => { if (ev.target === modal) closeModal() })
+function ask(title, message, okLabel) { // WKWebView 에서는 confirm() 이 조용히 실패하므로 직접 만든 확인 창을 쓴다
+  return new Promise((resolve) => {
+    modalBox.innerHTML = `<h2>${esc(title)}</h2><p>${esc(message)}</p><div class="row"><button id="mNo">취소</button><button id="mYes" class="danger">${esc(okLabel)}</button></div>`
+    modal.style.display = 'flex'
+    modalBox.querySelector('#mNo').onclick = () => { closeModal(); resolve(false) }
+    modalBox.querySelector('#mYes').onclick = () => { closeModal(); resolve(true) }
+  })
+}
+async function doAct(name, e) {
+  const s = e.data, label = e.look.nick || s.name
+  if (name === 'attach') return act('attach', { id: s.id })
+  if (name === 'stop' && await ask('세션을 멈출까요?', `‘${label}’ 이(가) 하던 일을 멈춥니다. 대화는 보존되어 나중에 이어 갈 수 있어요.`, '멈추기')) return act('stop', { id: s.id })
+  if (name === 'remove' && await ask('세션을 지울까요?', `‘${label}’ 의 대화 기록을 지웁니다. 되돌릴 수 없어요. push 하지 않은 커밋이 있는 워크트리는 지워지지 않고 안내가 나옵니다.`, '지우기')) { if (await act('remove', { id: s.id })) closePanel() }
+}
+document.getElementById('newBtn').onclick = () => {
+  if (!knownDirs.length) return toast('아직 세션이 돌았던 프로젝트 폴더가 없어요. 터미널에서 claude --bg 로 한 번 시작해 주세요.')
+  modalBox.innerHTML = `<h2>새 세션 시작</h2>
+    <label>어느 프로젝트에서</label><select id="mDir">${knownDirs.map((d) => `<option value="${esc(d)}">${esc(d.split('/').pop())} (${esc(d)})</option>`).join('')}</select>
+    <label>시킬 일</label><textarea id="mPrompt" placeholder="예: README 오타를 찾아서 고쳐줘"></textarea>
+    <p class="hint">백그라운드 세션(claude --bg)으로 시작합니다. 권한 모드는 Claude Code 설정을 따릅니다.</p>
+    <div class="row"><button id="mNo">취소</button><button id="mYes" class="primary">시작</button></div>`
+  modal.style.display = 'flex'
+  modalBox.querySelector('#mPrompt').focus()
+  modalBox.querySelector('#mNo').onclick = closeModal
+  modalBox.querySelector('#mYes').onclick = async () => {
+    const cwd = modalBox.querySelector('#mDir').value, prompt = modalBox.querySelector('#mPrompt').value.trim()
+    if (!prompt) return toast('시킬 일을 적어 주세요')
+    closeModal(); await act('start', { cwd, prompt })
+  }
+}
+
 /* ---------- 알림 ---------- */
 function toast(msg) {
   const el = document.createElement('div'); el.className = 'toast'; el.textContent = msg
@@ -720,7 +812,6 @@ const styleBtn = document.getElementById('style')
 const paintStyle = () => { styleBtn.textContent = style === 'sprite' ? '캐릭터: 도트' : '캐릭터: 기본' }
 styleBtn.onclick = () => { style = style === 'sprite' ? 'basic' : 'sprite'; try { localStorage.setItem('town.style', style) } catch {}; paintStyle(); if (selected) renderPanel() }
 paintStyle()
-document.getElementById('newCmd').onclick = (ev) => copyText('claude --bg "여기에 시킬 일을 적으세요"', ev.target)
 
 /* ---------- 시작 ---------- */
 function fit() {
@@ -736,7 +827,7 @@ for (const [text, x, y] of [['작업실', 4, 55], [`${OWNER} 호출 벨`, 388, 4
 // 주소에 ?demo=1 을 붙이면 가짜 세션으로 자리와 가구 배치를 한눈에 확인할 수 있다.
 const DEMO = new URLSearchParams(location.search).has('demo')
 function demoSessions() {
-  const mk = (i, state, extra = {}) => ({ id: 'demo' + i, kind: 'bg', name: `demo session ${i}`, state, detail: state === 'working' ? 'building the pixel office' : state === 'blocked' ? 'waiting for a decision' : '', intent: '', tokens: 3000 * (i + 1) ** 2, project: 'demo', worktree: null, createdAt: Date.now() - 3.6e6, updatedAt: Date.now() - (i % 3 ? 2 : 40) * 3.6e6, helpers: 0, links: [], subagents: [], tool: 'Bash', phase: i % 2 ? 'tool' : 'thinking', ...extra })
+  const mk = (i, state, extra = {}) => ({ id: 'demo' + i, kind: 'bg', name: `demo session ${i}`, state, detail: state === 'working' ? 'building the pixel office' : state === 'blocked' ? 'waiting for a decision' : '', intent: '', tokens: 3000 * (i + 1) ** 2, project: 'demo', worktree: null, createdAt: Date.now() - 3.6e6, updatedAt: Date.now() - (i % 3 ? 2 : 40) * 3.6e6, helpers: 0, links: [], subagents: [], permissionMode: i % 2 ? 'auto' : 'default', lastText: state === 'blocked' ? '배포 전에 확인이 필요합니다.\n1) 지금 바로 배포\n2) 내일 오전에 배포\n어느 쪽으로 할까요?' : null, pending: null, tool: 'Bash', phase: i % 2 ? 'tool' : 'thinking', ...extra })
   const sub = (id, type) => ({ id, type, description: 'demo task', at: Date.now() })
   return [mk(0, 'working', { subagents: [sub('a', 'Explore'), sub('b', 'frontend-developer'), sub('c', 'Plan')] }), mk(1, 'working'), mk(2, 'working', { subagents: [sub('d', 'general-purpose')] }), mk(3, 'working'), mk(4, 'working'),
     mk(5, 'blocked'), mk(6, 'blocked'), ...[...Array(17).keys()].map((k) => mk(7 + k, 'done'))]
@@ -745,14 +836,16 @@ async function poll() {
   if (DEMO) return sync(demoSessions())
   try {
     const res = await fetch('/api/sessions', { cache: 'no-store' })
-    sync((await res.json()).sessions)
+    const data = await res.json()
+    knownDirs = data.dirs || []
+    sync(data.sessions)
     document.getElementById('offline').style.display = 'none'
   } catch { document.getElementById('offline').style.display = 'block' }
 }
 function tickClock() { document.getElementById('clock').textContent = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) }
 addEventListener('resize', fit)
 paintSound(); fit(); paintBackground(); tickClock()
-setInterval(() => { paintBackground(); tickClock() }, 30000)
+setInterval(paintBackground, 30000); setInterval(tickClock, 1000)
 poll(); setInterval(poll, 2000)
 requestAnimationFrame(frame)
 </script>

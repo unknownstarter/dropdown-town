@@ -16,7 +16,7 @@
 ## 지켜 주세요
 
 - **의존성 없음을 유지합니다.** npm 패키지나 빌드 단계를 추가하지 않습니다.
-- **읽기 전용과 로컬 전용을 유지합니다.** `~/.claude` 에 쓰거나, 세션 정보를 컴퓨터 밖으로 보내는 변경은 받지 않습니다. 세션을 다루는 기능은 로드맵 2단계에서 설계부터 함께 이야기합니다.
+- **로컬 전용과 안전 장치를 유지합니다.** `~/.claude` 에 직접 쓰거나, 세션 정보를 컴퓨터 밖으로 보내는 변경은 받지 않습니다. 세션 제어는 공식 `claude` 명령만 부르고, 토큰 검사와 상태 확인, 확인 창을 없애지 않습니다. 내부 소켓이나 비공개 규격으로 권한 요청에 대신 답하는 변경은 받지 않습니다.
 - **그림 에셋은 CC0 또는 직접 그린 것만** 받습니다. 출처와 라이선스를 `CREDITS.txt` 에 적어 주세요. 재배포가 금지된 유료 팩은 넣을 수 없습니다.
 - 한 PR 에는 한 가지 목적만 담습니다.
 - 기여한 코드는 이 저장소의 MIT 라이선스로 배포되는 데 동의하는 것으로 봅니다.
@@ -41,7 +41,7 @@ Thank you for contributing. This repository has a single maintainer who reviews 
 ## Ground rules
 
 - **Keep it dependency-free.** No npm packages, no build step.
-- **Keep it read-only and local-only.** Changes that write to `~/.claude` or send session data off the machine will not be accepted. Session control belongs to roadmap stage 2 and starts with a design discussion.
+- **Keep it local-only and keep the guards.** Changes that write to `~/.claude` directly or send session data off the machine will not be accepted. Session control must only call official `claude` commands and must keep the token check, state validation and confirmation dialogs. Changes that answer permission prompts through internal sockets or private formats will not be accepted.
 - **Art assets must be CC0 or your own work.** Record the source and license in a `CREDITS.txt`. Paid packs that forbid redistribution cannot be included.
 - One purpose per PR.
 - By contributing you agree that your code is distributed under this repository's MIT license.
