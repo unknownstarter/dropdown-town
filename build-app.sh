@@ -24,6 +24,7 @@ done
 iconutil -c icns "$WORK/AppIcon.iconset" -o "$APP/Contents/Resources/AppIcon.icns"
 
 cp server.mjs index.html "$APP/Contents/Resources/"
+cp -R assets "$APP/Contents/Resources/"
 # Finder 로 연 앱은 셸 PATH 를 못 받으므로, 지금 쓰는 node 의 절대 경로를 적어 둔다.
 command -v node > "$APP/Contents/Resources/node-path.txt"
 

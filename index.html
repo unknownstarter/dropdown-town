@@ -60,6 +60,7 @@
   <div class="chip rest">쉬는 중 <b id="nRest">0</b></div>
   <div class="grow"></div>
   <span id="clock"></span>
+  <button id="style">캐릭터: 도트</button>
   <button id="sound">알림음 꺼짐</button>
 </header>
 <main><div id="stage"><canvas id="cv" width="480" height="300"></canvas><div id="labels"></div></div></main>
@@ -71,6 +72,7 @@
 const W = 480, H = 300, LANE = 196, SPEED = 60
 const DOOR = { x: 336, y: 46, aisle: null }
 const cv = document.getElementById('cv'), ctx = cv.getContext('2d')
+ctx.imageSmoothingEnabled = false
 const labels = document.getElementById('labels'), panel = document.getElementById('panel')
 let scale = 2
 
@@ -83,7 +85,7 @@ const hsl2hex = (h, s, l) => { const a = s * Math.min(l, 1 - l); const f = (n) =
 const deskPos = (i) => ({ x: 12 + (i % 5) * 64, y: 92 + Math.floor(i / 5) * 56 })
 const SPOTS = {
   work: (i) => { const d = deskPos(i); return { x: d.x + 18, y: d.y - 14, aisle: d.x + 50 } },
-  help: (i) => ({ x: 376 + (i % 2) * 50, y: 106 + i * 26, aisle: null }), // 두 줄로 엇갈려 세워 말풍선이 겹치지 않게 한다
+  help: (i) => ({ x: 376 + (i % 2) * 50, y: 106 + i * 28, aisle: null }), // 두 줄로 엇갈려 세워 말풍선이 겹치지 않게 한다
   rest: (i) => ({ x: 24 + (i % 15) * 29, y: 224 + (i % 2) * 34 + (i >= 15 ? 10 : 0), aisle: null }), // 지그재그로 앉혀 이름표가 겹치지 않게 한다
 }
 const slots = { work: [], help: [], rest: [] }
@@ -121,6 +123,7 @@ function defaultLook(s) {
     hair: HAIRS[h % HAIRS.length], skin: SKINS[(h >>> 4) % SKINS.length],
     shirt: hsl2hex((h >>> 8) % 360, 0.55, 0.55),
     acc: s.kind === 'interactive' ? 'crown' : accKeys[(h >>> 16) % accKeys.length], nick: '',
+    body: hash(s.id + 'body') % 6, outfit: hash(s.id + 'outfit') % 11, hairStyle: hash(s.id + 'hair') % 12, // 도트 캐릭터용(모자 달린 옷은 직접 고를 때만)
   }
 }
 function loadLook(s) {
@@ -166,6 +169,50 @@ function drawChar(c, x, y, look, pose, t, seed) {
   if (look.acc === 'headphones') { R(c, x + 1, yy - 1, 10, 1, '#333'); R(c, x, yy + 2, 2, 4, '#333'); R(c, x + 10, yy + 2, 2, 4, '#333') }
   if (look.acc === 'crown') { R(c, x + 3, yy - 2, 6, 2, '#f5c542'); R(c, x + 3, yy - 3, 1, 1, '#f5c542'); R(c, x + 5, yy - 3, 2, 1, '#f5c542'); R(c, x + 8, yy - 3, 1, 1, '#f5c542') }
   if (look.acc === 'cat') { R(c, x + 2, yy - 2, 2, 2, look.hair); R(c, x + 8, yy - 2, 2, 2, look.hair); R(c, x + 2, yy - 1, 1, 1, '#f29c9c'); R(c, x + 9, yy - 1, 1, 1, '#f29c9c') }
+}
+
+/* ---------- 도트 캐릭터 (MetroCity 에셋, CC0) ---------- */
+// 시트는 32x32 프레임 24칸: 0~5 앞, 6~11 오른쪽, 12~17 뒤, 18~23 왼쪽(각 6칸 달리기 동작). 몸 위에 머리와 옷을 겹쳐 입힌다.
+const SPRITE_FILES = ['model', 'outfit1', 'outfit2', 'outfit4', 'outfit5', 'outfit6', 'suit', 'suit1', 'hairs', 'hair2']
+const BODIES = ['밝은 피부 1', '밝은 피부 2', '밝은 피부 3', '어두운 피부 1', '아주 밝은 피부', '어두운 피부 2']
+const OUTFITS = [
+  { name: '흰 티', src: 'outfit5', row: 0 }, { name: '주황 티', src: 'outfit4', row: 0 }, { name: '빨간 티', src: 'outfit6', row: 0 },
+  { name: '보라 티', src: 'outfit2', row: 0 }, { name: '원피스', src: 'outfit1', row: 0 }, { name: '정장', src: 'suit', row: 2 },
+  { name: '흰 셔츠', src: 'suit1', row: 0 }, { name: '분홍 셔츠', src: 'suit1', row: 1 }, { name: '파란 셔츠', src: 'suit1', row: 2 },
+  { name: '민트 셔츠', src: 'suit1', row: 3 }, { name: '자주 셔츠', src: 'suit1', row: 4 },
+  { name: '경찰', src: 'suit', row: 0, hat: true }, { name: '벨보이', src: 'suit', row: 1, hat: true }, { name: '작업모', src: 'suit', row: 3, hat: true },
+]
+const HAIRSTYLES = [...Array(8).keys()].map((r) => ({ src: 'hairs', row: r })).concat([0, 2, 3, 4].map((r) => ({ src: 'hair2', row: r })))
+const DIR_BASE = { down: 0, right: 6, up: 12, left: 18 }
+const sprites = {}
+let spritesReady = false, style = 'sprite'
+try { style = localStorage.getItem('town.style') || 'sprite' } catch {}
+style = new URLSearchParams(location.search).get('style') || style // 주소에 ?style=basic 을 붙여도 된다
+Promise.all(SPRITE_FILES.map((name) => new Promise((ok, fail) => {
+  const img = new Image(); img.onload = () => { sprites[name] = img; ok() }; img.onerror = fail; img.src = `assets/metrocity/${name}.png`
+}))).then(() => { spritesReady = true }).catch(() => {}) // 에셋이 없으면 기본 캐릭터로 그린다
+const useSprites = () => style === 'sprite' && spritesReady
+
+function sheetOf(e) { // 몸 + 머리 + 옷을 한 줄짜리 시트로 미리 합쳐 둔다
+  if (e.sheet) return e.sheet
+  const cvs = document.createElement('canvas'); cvs.width = 768; cvs.height = 32
+  const c = cvs.getContext('2d'), outfit = OUTFITS[e.look.outfit] || OUTFITS[0], hair = HAIRSTYLES[e.look.hairStyle]
+  c.drawImage(sprites.model, 0, (e.look.body % 6) * 32, 768, 32, 0, 0, 768, 32)
+  if (hair && !outfit.hat) c.drawImage(sprites[hair.src], 0, hair.row * 32, 768, 32, 0, 0, 768, 32)
+  c.drawImage(sprites[outfit.src], 0, outfit.row * 32, 768, 32, 0, 0, 768, 32)
+  return (e.sheet = cvs)
+}
+const SPRITE_RISE = 12 // 도트 캐릭터는 기본 캐릭터보다 12px 크다
+function drawSprite(c, e, pose, t, sink) {
+  const moving = pose === 'walk' || pose === 'alert'
+  const frame = DIR_BASE[pose === 'walk' ? e.dir : 'down'] + (moving ? Math.floor(t / 95 + e.seed) % 6 : 0)
+  let dy = e.y - 15 + sink
+  if (pose === 'alert' && Math.floor(t / 180) % 2) dy -= 2
+  if (pose === 'type' && Math.floor(t / 600 + e.seed) % 2) dy += 1
+  R(c, e.x + 1, e.y + 15 + sink, 10, 2, 'rgba(0,0,0,.22)')
+  c.drawImage(sheetOf(e), frame * 32, 0, 32, 32, Math.round(e.x) - 10, Math.round(dy), 32, 32)
+  if (pose === 'coffee') { R(c, e.x + 12, e.y + 4, 3, 3, '#ffffff'); R(c, e.x + 12, e.y + 4, 3, 1, '#6b4226'); R(c, e.x + 13, e.y + 1 - (Math.floor(t / 600) % 2), 1, 2, 'rgba(255,255,255,.7)') }
+  if (e.look.acc === 'crown') { const y = dy + 1; R(c, e.x + 3, y, 6, 2, '#f5c542'); R(c, e.x + 3, y - 1, 1, 1, '#f5c542'); R(c, e.x + 5, y - 1, 2, 1, '#f5c542'); R(c, e.x + 8, y - 1, 1, 1, '#f5c542') }
 }
 
 function drawSpark(c, x, y, t) { // 생각 중: 주황 별표
@@ -282,7 +329,7 @@ let firstLoad = true, selected = null, hovered = null
 const entsIn = (zone) => { let n = 0; for (const e of ents.values()) if (e.zone === zone) n++; return n }
 
 function makeEnt(s) {
-  const e = { id: s.id, data: s, zone: null, slot: -1, x: DOOR.x, y: DOOR.y, path: [], spot: DOOR, look: loadLook(s), seed: hash(s.id) % 97 }
+  const e = { id: s.id, data: s, zone: null, slot: -1, x: DOOR.x, y: DOOR.y, path: [], spot: DOOR, look: loadLook(s), seed: hash(s.id) % 97, dir: 'down', sheet: null }
   e.tag = document.createElement('div'); e.tag.className = 'tag'
   e.bubble = document.createElement('div'); e.bubble.className = 'bubble'
   labels.append(e.tag, e.bubble)
@@ -348,6 +395,7 @@ function step(e, dt) {
   let left = SPEED * dt
   while (left > 0 && e.path.length) {
     const p = e.path[0], dx = p.x - e.x, dy = p.y - e.y, d = Math.hypot(dx, dy)
+    if (d > 0.01) e.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up'
     if (d <= left) { e.x = p.x; e.y = p.y; e.path.shift(); left -= d }
     else { e.x += (dx / d) * left; e.y += (dy / d) * left; left = 0 }
   }
@@ -379,21 +427,25 @@ function frame(t) {
   for (const e of ents.values()) {
     step(e, dt)
     const pose = poseOf(e)
-    items.push({ base: e.y + 16, draw: (c) => {
-      drawChar(c, e.x, e.y, e.look, pose, t, e.seed)
-      if (pose === 'sleep') drawZzz(c, e.x, e.y, t)
-      if (pose === 'alert') drawBang(c, e.x, e.y, t)
-      if (pose === 'type') (e.data.phase === 'tool' ? drawDots(c, e.x + 14, e.y + 1, t) : drawSpark(c, e.x + 15, e.y - 1, t))
-      if (pose === 'type') for (let i = 0; i < Math.min(4, e.data.helpers); i++) { const a = t / 700 + i * 1.6; drawHelper(c, e.x + 3 + Math.cos(a) * 15, e.y + 6 + Math.sin(a) * 3, t, i + e.seed) }
-      if (hovered === e.id || selected === e.id) { c.strokeStyle = '#fff'; c.lineWidth = 1; c.strokeRect(Math.round(e.x) - 1.5, Math.round(e.y) - 3.5, 15, 21) }
-    } })
-    // 이름표와 말풍선 위치
     const seated = e.zone === 'work' && !e.path.length
+    const sprite = useSprites(), sink = sprite && seated ? 6 : 0 // 앉으면 다리가 책상 뒤로 가려지게 조금 내린다
+    const hy = sprite ? e.y - SPRITE_RISE + sink : e.y
+    items.push({ base: e.y + 16, draw: (c) => {
+      if (sprite) drawSprite(c, e, pose, t, sink)
+      else drawChar(c, e.x, e.y, e.look, pose, t, e.seed)
+      if (pose === 'sleep') drawZzz(c, e.x, hy, t)
+      if (pose === 'alert') drawBang(c, e.x, hy, t)
+      if (pose === 'type') (e.data.phase === 'tool' ? drawDots(c, e.x + 14, hy + 1, t) : drawSpark(c, e.x + 15, hy - 1, t))
+      if (pose === 'type') for (let i = 0; i < Math.min(4, e.data.helpers); i++) { const a = t / 700 + i * 1.6; drawHelper(c, e.x + 3 + Math.cos(a) * 15, hy + 6 + Math.sin(a) * 3, t, i + e.seed) }
+      if (hovered === e.id || selected === e.id) { c.strokeStyle = '#fff'; c.lineWidth = 1; c.strokeRect(Math.round(e.x) - 1.5, Math.round(hy) - 3.5, 15, Math.round(e.y - hy) + 21 + sink) }
+    } })
+    e.hy = hy
+    // 이름표와 말풍선 위치
     e.tag.style.left = (e.x + 6) * scale + 'px'
     e.tag.style.top = (seated ? e.y + 28.5 : e.y + 18) * scale + 'px' // 앉아 있으면 책상 앞면의 명패 자리
     const show = !e.bubble.dataset.empty && !e.path.length
     e.bubble.style.display = show ? 'block' : 'none'
-    if (show) { const half = e.bubble.offsetWidth / 2 + 2; e.bubble.style.left = Math.max(half, Math.min(W * scale - half, (e.x + 6) * scale)) + 'px'; e.bubble.style.top = (e.y - (e.zone === 'help' ? 15 : 4)) * scale + 'px' }
+    if (show) { const half = e.bubble.offsetWidth / 2 + 2; e.bubble.style.left = Math.max(half, Math.min(W * scale - half, (e.x + 6) * scale)) + 'px'; e.bubble.style.top = (hy - (e.zone === 'help' ? 15 : 4)) * scale + 'px' }
   }
   items.sort((a, b) => a.base - b.base)
   for (const it of items) it.draw(ctx)
@@ -425,25 +477,31 @@ function renderPanel(full = true) {
     <h3>캐릭터 꾸미기</h3>
     <div class="dress">
       <label>별명</label><input type="text" id="fNick" maxlength="14" placeholder="${esc(clip(s.name, 14))}" value="${esc(e.look.nick)}">
+      ${useSprites() ? `
+      <label>몸</label><select id="fBody">${BODIES.map((n, i) => `<option value="${i}"${i === e.look.body ? ' selected' : ''}>${n}</option>`).join('')}</select>
+      <label>머리</label><select id="fHairStyle">${HAIRSTYLES.map((_, i) => `<option value="${i}"${i === e.look.hairStyle ? ' selected' : ''}>머리 ${i + 1}</option>`).join('')}<option value="-1"${e.look.hairStyle === -1 ? ' selected' : ''}>없음</option></select>
+      <label>옷</label><select id="fOutfit">${OUTFITS.map((o, i) => `<option value="${i}"${i === e.look.outfit ? ' selected' : ''}>${o.name}</option>`).join('')}</select>
+      <label>왕관</label><select id="fAcc"><option value="none">없음</option><option value="crown"${e.look.acc === 'crown' ? ' selected' : ''}>쓰기</option></select>` : `
       <label>머리</label><input type="color" id="fHair" value="${e.look.hair}">
       <label>피부</label><input type="color" id="fSkin" value="${e.look.skin}">
       <label>옷</label><input type="color" id="fShirt" value="${e.look.shirt}">
-      <label>장식</label><select id="fAcc">${Object.entries(ACCS).map(([k, v]) => `<option value="${k}"${k === e.look.acc ? ' selected' : ''}>${v}</option>`).join('')}</select>
+      <label>장식</label><select id="fAcc">${Object.entries(ACCS).map(([k, v]) => `<option value="${k}"${k === e.look.acc ? ' selected' : ''}>${v}</option>`).join('')}</select>`}
       <span></span><button id="fReset">처음 모습으로</button>
     </div>`
   panel.querySelector('h2').textContent = e.look.nick || s.name
   panel.style.display = 'block'
   panel.querySelector('.x').onclick = closePanel
-  const bind = (id, key) => { panel.querySelector(id).oninput = (ev) => { e.look[key] = ev.target.value; saveLook(e); refreshLabels(e); panel.querySelector('h2').textContent = e.look.nick || s.name } }
+  const bind = (id, key, num) => { const el = panel.querySelector(id); if (!el) return; el.oninput = (ev) => { e.look[key] = num ? Number(ev.target.value) : ev.target.value; e.sheet = null; saveLook(e); refreshLabels(e); panel.querySelector('h2').textContent = e.look.nick || s.name } }
   bind('#fNick', 'nick'); bind('#fHair', 'hair'); bind('#fSkin', 'skin'); bind('#fShirt', 'shirt'); bind('#fAcc', 'acc')
-  panel.querySelector('#fReset').onclick = () => { e.look = defaultLook(s); saveLook(e); refreshLabels(e); renderPanel() }
+  bind('#fBody', 'body', true); bind('#fHairStyle', 'hairStyle', true); bind('#fOutfit', 'outfit', true)
+  panel.querySelector('#fReset').onclick = () => { e.sheet = null; e.look = defaultLook(s); saveLook(e); refreshLabels(e); renderPanel() }
 }
 function closePanel() { const prev = ents.get(selected); selected = null; panel.style.display = 'none'; if (prev) refreshLabels(prev) }
 
 function pick(ev) {
   const r = cv.getBoundingClientRect(), mx = (ev.clientX - r.left) / scale, my = (ev.clientY - r.top) / scale
   let best = null
-  for (const e of ents.values()) if (mx >= e.x - 3 && mx <= e.x + 15 && my >= e.y - 5 && my <= e.y + 19 && (!best || e.y > best.y)) best = e
+  for (const e of ents.values()) if (mx >= e.x - 3 && mx <= e.x + 15 && my >= (e.hy ?? e.y) - 5 && my <= e.y + 19 && (!best || e.y > best.y)) best = e
   return best
 }
 cv.addEventListener('mousemove', (ev) => { const e = pick(ev); hovered = e ? e.id : null; cv.style.cursor = e ? 'pointer' : 'default' })
@@ -472,6 +530,12 @@ function beep(freq) {
     o.connect(g).connect(audio.destination); o.start(); o.stop(audio.currentTime + 0.35)
   } catch {}
 }
+
+/* ---------- 캐릭터 스타일 전환 ---------- */
+const styleBtn = document.getElementById('style')
+const paintStyle = () => { styleBtn.textContent = style === 'sprite' ? '캐릭터: 도트' : '캐릭터: 기본' }
+styleBtn.onclick = () => { style = style === 'sprite' ? 'basic' : 'sprite'; try { localStorage.setItem('town.style', style) } catch {}; paintStyle(); if (selected) renderPanel() }
+paintStyle()
 
 /* ---------- 시작 ---------- */
 function fit() {
