@@ -159,6 +159,11 @@ claude --bg "이 폴더에 뭐가 있는지 요약해줘"
 </details>
 
 
+### 후원하기
+
+이 프로젝트가 마음에 드셨다면 [GitHub Sponsors](https://github.com/sponsors/unknownstarter) 로 응원해 주세요. 저장소 위쪽의 "Sponsor" 버튼으로도 갈 수 있습니다. 후원은 로드맵(어디서든 접근하는 가상 오피스)을 계속 만들어 가는 데 쓰입니다.
+
+
 ### 기여, 라이선스, 크레딧
 
 - 기여는 언제나 환영합니다. 방법은 [CONTRIBUTING.md](CONTRIBUTING.md) 에 있습니다.
@@ -302,6 +307,11 @@ The goal is **access to your sessions from anywhere, built around a virtual offi
 | `assets/` | MetroCity character and furniture pieces |
 
 </details>
+
+
+### Sponsor
+
+If you enjoy this project, you can support it on [GitHub Sponsors](https://github.com/sponsors/unknownstarter), or use the "Sponsor" button at the top of the repository. Sponsorship goes toward building out the roadmap: a virtual office you can reach from anywhere.
 
 
 ### Contributing, license, credits
