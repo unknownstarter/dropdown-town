@@ -24,7 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1240, height: 860),
                       styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
     window.title = "Dropdown Town"
-    window.minSize = NSSize(width: 520, height: 400)
+    window.minSize = NSSize(width: 340, height: 400)
     window.contentView = webView
     window.setFrameAutosaveName("ClaudeTownWindow")
     if !window.setFrameUsingName("ClaudeTownWindow") { window.center() }
@@ -86,6 +86,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     viewMenu.addItem(withTitle: "새로 고침", action: #selector(reload(_:)), keyEquivalent: "r")
     pinItem = viewMenu.addItem(withTitle: "항상 위에 두기", action: #selector(togglePin(_:)), keyEquivalent: "t")
     viewMenu.addItem(withTitle: "작은 창으로", action: #selector(compact(_:)), keyEquivalent: "1")
+    viewMenu.addItem(.separator())
+    viewMenu.addItem(withTitle: "화면 왼쪽 3분의 1에 붙이기", action: #selector(snapLeft(_:)), keyEquivalent: "[")
+    viewMenu.addItem(withTitle: "화면 오른쪽 3분의 1에 붙이기", action: #selector(snapRight(_:)), keyEquivalent: "]")
     viewItem.submenu = viewMenu
 
     let windowItem = NSMenuItem(); main.addItem(windowItem)
@@ -104,6 +107,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     pinItem.state = pinned ? .on : .off
     UserDefaults.standard.set(pinned, forKey: "pinned")
   }
+
+  // 화면 옆 3분의 1에 세로로 길게 붙인다. 이 너비에서는 화면이 미니맵 + 세션 카드 목록 구성으로 바뀐다.
+  func snap(right: Bool) {
+    guard let area = (window.screen ?? NSScreen.main)?.visibleFrame else { return }
+    let width = max(340, (area.width / 3).rounded())
+    window.setFrame(NSRect(x: right ? area.maxX - width : area.minX, y: area.minY, width: width, height: area.height), display: true, animate: true)
+  }
+  @objc func snapLeft(_ sender: Any?) { snap(right: false) }
+  @objc func snapRight(_ sender: Any?) { snap(right: true) }
 
   // 코드 편집기 옆에 띄워 두기 좋은 크기(월드 1.5배)로 줄인다.
   @objc func compact(_ sender: Any?) {

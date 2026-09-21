@@ -20,7 +20,31 @@
   button { font:inherit; color:var(--ink); background:var(--panel); border:2px solid var(--line); border-radius:4px; padding:3px 9px; cursor:pointer; }
   button:hover { border-color:var(--work); }
   #clock { color:var(--dim); }
-  main { display:flex; justify-content:center; padding:10px 12px; }
+  body { display:flex; flex-direction:column; }
+  main { flex:1; min-height:0; display:flex; flex-direction:column; align-items:center; padding:10px 12px; }
+  #list { display:none; }
+  /* 좁은 창(화면 옆 3분의 1 등): 위에는 사무실을 미니맵처럼, 아래에는 세션 카드 목록을 보여준다 */
+  body.compact header { height:auto; flex-wrap:wrap; gap:6px; padding:8px 10px; font-size:11px; }
+  body.compact h1 { font-size:14px; flex:1 0 auto; } body.compact .grow { display:none; }
+  body.compact .chip, body.compact header button { padding:2px 6px; }
+  body.compact main { padding:6px 8px 0; }
+  body.compact #stage { border-width:2px; flex:none; }
+  body.compact .bubble { display:none !important; }
+  body.compact .zone { font-size:9px; padding:0 4px; }
+  body.compact #list { display:block; flex:1; min-height:0; width:100%; overflow:auto; padding:8px 2px 12px; }
+  body.compact #panel { left:8px; right:8px; width:auto; top:auto; bottom:8px; max-height:62vh; box-shadow:0 -8px 24px rgba(0,0,0,.5); }
+  #list h3 { font-size:12px; margin:12px 4px 6px; font-weight:normal; display:flex; gap:6px; align-items:center; }
+  #list h3 b { font-weight:normal; color:var(--dim); }
+  .card { display:flex; gap:10px; align-items:flex-start; padding:8px; margin-bottom:6px; background:var(--panel); border:2px solid var(--line); border-radius:6px; cursor:pointer; }
+  .card:hover, .card.sel { border-color:var(--work); }
+  .card.help { border-color:var(--help); }
+  .card .body { min-width:0; flex:1; }
+  .card b { font-weight:normal; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .card b i { font-style:normal; color:var(--work); margin-right:5px; font-size:11px; }
+  .card p { margin:3px 0 0; font-size:12px; line-height:1.45; color:var(--ink); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .card small { display:block; margin-top:3px; color:var(--dim); font-size:11px; }
+  .card small em { font-style:normal; color:var(--work); }
+  .empty { color:var(--dim); text-align:center; padding:24px 8px; line-height:1.6; }
   #stage { position:relative; border:4px solid #0e0b16; box-shadow:0 0 0 2px var(--line); }
   canvas { display:block; image-rendering:pixelated; }
   #labels { position:absolute; inset:0; pointer-events:none; overflow:hidden; }
@@ -91,7 +115,7 @@
   <button id="style">캐릭터: 도트</button>
   <button id="sound">알림음 꺼짐</button>
 </header>
-<main><div id="stage"><canvas id="cv" width="480" height="300"></canvas><div id="labels"></div></div></main>
+<main><div id="stage"><canvas id="cv" width="480" height="300"></canvas><div id="labels"></div></div><div id="list"></div></main>
 <aside id="panel"></aside>
 <div id="toasts"></div>
 <div id="modal"><div class="box"></div></div>
@@ -584,6 +608,7 @@ function sync(list) {
   nWork.textContent = n.work; nHelp.textContent = n.help; nRest.textContent = n.rest
   document.title = (n.help ? `(${n.help}) ` : '') + 'Dropdown Town'
   if (selected && ents.has(selected)) renderPanel(false)
+  renderList(false)
 }
 
 function step(e, dt) {
@@ -638,7 +663,7 @@ function frame(t) {
     } })
     e.hy = hy
     // 이름표와 말풍선 위치. 휴게실 캐릭터와 조수는 가구를 가리지 않도록 마우스를 올렸을 때만 이름표를 보여준다.
-    const quiet = e.zone === 'rest' && hovered !== e.id && selected !== e.id
+    const quiet = (compact || e.zone === 'rest') && hovered !== e.id && selected !== e.id // 좁은 창에서는 이름표를 목록이 대신한다
     e.tag.style.display = quiet ? 'none' : 'block'
     e.tag.style.left = (e.x + 6) * scale + 'px'
     e.tag.style.top = (seated ? e.y + 28.5 : e.y + 18) * scale + 'px' // 앉아 있으면 책상 앞면의 명패 자리
@@ -753,7 +778,7 @@ function copyText(text, btn) {
   const fallback = () => { const ta = document.createElement('textarea'); ta.value = text; document.body.append(ta); ta.select(); document.execCommand('copy'); ta.remove(); done() }
   if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, fallback); else fallback()
 }
-function closePanel() { const prev = ents.get(selected); selected = null; rosterOpen = false; panel.style.display = 'none'; if (prev) refreshLabels(prev) }
+function closePanel() { const prev = ents.get(selected); selected = null; rosterOpen = false; panel.style.display = 'none'; if (prev) refreshLabels(prev); renderList(true) }
 
 function pick(ev) {
   const r = cv.getBoundingClientRect(), mx = (ev.clientX - r.left) / scale, my = (ev.clientY - r.top) / scale
@@ -765,8 +790,36 @@ cv.addEventListener('mousemove', (ev) => { const e = pick(ev); hovered = e ? e.i
 cv.addEventListener('click', (ev) => {
   const e = pick(ev), prev = ents.get(selected)
   if (!e) return closePanel()
-  rosterOpen = false; selected = e.id; if (prev) refreshLabels(prev); refreshLabels(e); renderPanel()
+  selectEnt(e.id)
 })
+
+/* ---------- 세션 카드 목록 (좁은 창) ---------- */
+const listEl = document.getElementById('list')
+function selectEnt(id) {
+  const e = ents.get(id), prev = ents.get(selected)
+  if (!e) return
+  rosterOpen = false; selected = id
+  if (prev) refreshLabels(prev)
+  refreshLabels(e); renderPanel(); renderList(true)
+}
+function renderList(force) {
+  if (!compact) { listEl.innerHTML = ''; listEl.dataset.key = ''; return }
+  const all = [...ents.values()].filter((e) => !isSub(e) && !e.leaving)
+  const groups = [['help', `${OWNER} 호출 벨`, 'var(--help)'], ['work', '작업실', 'var(--work)'], ['rest', '휴게실', 'var(--rest)']]
+  const key = JSON.stringify([selected, style, spritesReady, Math.floor(Date.now() / 60000), all.map((e) => [e.id, e.zone, e.look.nick, e.look.body, e.look.outfit, e.look.hairStyle, e.data.name, e.data.detail, e.data.phase, e.data.tool, e.data.tokens, e.data.subagents.map((a) => a.type)])])
+  if (!force && listEl.dataset.key === key) return
+  listEl.dataset.key = key
+  const card = (e) => {
+    const s = e.data, tk = s.phase === 'tool' ? toolKo(s.tool) : s.phase === 'thinking' ? '생각 중' : ''
+    const text = e.zone === 'rest' ? (s.detail || s.lastText || '') : s.detail || (e.zone === 'help' ? s.lastText || '답을 기다리고 있어요' : '')
+    const meta = [tk ? `<em>${esc(tk)}</em>` : '', s.subagents.length ? '조수 ' + s.subagents.map((a) => esc(a.type)).join(', ') : '', e.zone === 'work' ? '' : ago(s.updatedAt), s.kind === 'interactive' ? '터미널 세션' : ''].filter(Boolean).join(', ')
+    return `<div class="card${e.zone === 'help' ? ' help' : ''}${selected === e.id ? ' sel' : ''}" data-id="${esc(e.id)}"><span class="face"></span><div class="body"><b><i>Lv.${level(s.tokens)}</i>${esc(e.look.nick || s.name)}</b>${text ? `<p>${esc(clip(text.replace(/\s+/g, ' '), 140))}</p>` : ''}${meta ? `<small>${meta}</small>` : ''}</div></div>`
+  }
+  listEl.innerHTML = all.length
+    ? groups.map(([zone, title, color]) => { const list = all.filter((e) => e.zone === zone); return list.length ? `<h3><span class="badge" style="background:${color}">${esc(title)}</span><b>${list.length}</b></h3>${list.map(card).join('')}` : '' }).join('')
+    : '<div class="empty">아직 세션이 없어요.<br>오른쪽 위 "+ 새 세션"으로 일을 시켜 보세요.</div>'
+  listEl.querySelectorAll('.card').forEach((el) => { const e = ents.get(el.dataset.id); el.querySelector('.face').append(portrait(e.look, 40)); el.onclick = () => selectEnt(e.id) })
+}
 
 /* ---------- 직원 명부 ---------- */
 // 직군 에이전트(정의해 둔 서브에이전트)별로 지금 어디서 일하는지, 지금까지 몇 번 불렸고 무슨 일을 맡았는지 보여준다.
@@ -899,9 +952,16 @@ styleBtn.onclick = () => { style = style === 'sprite' ? 'basic' : 'sprite'; try 
 paintStyle()
 
 /* ---------- 시작 ---------- */
+let compact = false
 function fit() {
-  const aw = innerWidth - 40, ah = innerHeight - 52 - 36
-  scale = Math.max(1, Math.floor(Math.min(aw / W, ah / H) * 2) / 2)
+  // 창이 좁으면(760px 미만) 압축 구성으로 바꾼다. 머리줄이 여러 줄로 접히므로 높이는 그때그때 잰다.
+  const was = compact
+  compact = innerWidth < 760
+  document.body.classList.toggle('compact', compact)
+  const headerH = document.querySelector('header').offsetHeight
+  if (compact) scale = Math.max(0.6, Math.min(2, Math.floor(Math.min((innerWidth - 22) / W, ((innerHeight - headerH) * 0.48) / H) * 20) / 20))
+  else { const aw = innerWidth - 40, ah = innerHeight - headerH - 36; scale = Math.max(1, Math.floor(Math.min(aw / W, ah / H) * 2) / 2) }
+  if (was !== compact) renderList(true)
   document.documentElement.style.setProperty('--s', scale)
   cv.style.width = W * scale + 'px'; cv.style.height = H * scale + 'px'
   labels.querySelectorAll('.zone').forEach((z) => { z.style.left = z.dataset.x * scale + 'px'; z.style.top = z.dataset.y * scale + 'px' })

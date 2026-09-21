@@ -6,6 +6,8 @@
 
 ![Dropdown Town 화면](docs/screenshot.png)
 
+<img src="docs/screenshot-sidebar.png" alt="좁은 창 구성" width="320">
+
 > 지금은 **macOS 전용**이고, **Claude Code** 세션만 보여줍니다. Anthropic 과 관련 없는 비공식 개인 프로젝트입니다.
 
 
@@ -97,7 +99,8 @@ claude --bg "이 폴더에 뭐가 있는지 요약해줘"
 | 새 일 시키기 | 오른쪽 위 "+ 새 세션"에서 프로젝트를 고르고 시킬 일을 적습니다. |
 | 내 에이전트 팀 보기 | 오른쪽 위 "직원 명부". 직접 만든 직군 에이전트별로 지금 어디서 일하는지, 몇 번 불렸는지, 최근에 맡은 일이 나옵니다. |
 | 캐릭터 꾸미기 | 캐릭터를 누르면 아래쪽에 별명, 몸, 머리, 옷을 바꾸는 칸이 있습니다. |
-| 코드 편집기 옆에 작게 띄우기 | 메뉴 "보기"의 "작은 창으로"(⌘1)와 "항상 위에 두기"(⌘T). |
+| 화면 옆에 세로로 붙여 두기 | 메뉴 "보기"의 "화면 왼쪽 3분의 1에 붙이기"(⌘[)나 "오른쪽"(⌘]). 창이 좁아지면 위에는 사무실 미니맵, 아래에는 세션 카드 목록으로 구성이 바뀝니다. "항상 위에 두기"(⌘T)와 같이 쓰면 좋습니다. |
+| 코드 편집기 옆에 작게 띄우기 | 메뉴 "보기"의 "작은 창으로"(⌘1). |
 | 알림음 켜기 | 오른쪽 위 "알림음" 버튼. 세션이 나를 찾거나 일을 끝내면 소리가 납니다. |
 
 
@@ -252,7 +255,8 @@ claude --bg "Summarize what is in this folder"
 | Start new work | "+ 새 세션" at the top right: pick a project and describe the task. |
 | See your agent team | "직원 명부" at the top right: for each subagent you defined, where it is working now, how often it was called, and its recent tasks. |
 | Dress up a character | Click it and use the fields at the bottom of the panel. |
-| Keep it beside your editor | View menu: Compact window (⌘1) and Always on top (⌘T). |
+| Dock it to the side of your screen | View menu: snap to the left third (⌘[) or right third (⌘]). In a narrow window the layout switches to a mini-map of the office on top and a list of session cards below. Works well with Always on top (⌘T). |
+| Keep it small beside your editor | View menu: Compact window (⌘1). |
 
 
 ### FAQ
