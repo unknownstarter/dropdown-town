@@ -1,4 +1,4 @@
-// 클로드 타운 맥 앱: 로컬 서버(server.mjs)를 직접 띄우고, 그 화면을 독립 창(WKWebView)으로 보여준다.
+// Dropdown Town 맥 앱: 로컬 서버(server.mjs)를 직접 띄우고, 그 화면을 독립 창(WKWebView)으로 보여준다.
 import Cocoa
 import WebKit
 
@@ -21,7 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
     window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1240, height: 860),
                       styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-    window.title = "클로드 타운"
+    window.title = "Dropdown Town"
     window.minSize = NSSize(width: 520, height: 400)
     window.contentView = webView
     window.setFrameAutosaveName("ClaudeTownWindow")
@@ -65,9 +65,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     let main = NSMenu()
     let appItem = NSMenuItem(); main.addItem(appItem)
     let appMenu = NSMenu()
-    appMenu.addItem(withTitle: "클로드 타운 가리기", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+    appMenu.addItem(withTitle: "Dropdown Town 가리기", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
     appMenu.addItem(.separator())
-    appMenu.addItem(withTitle: "클로드 타운 종료", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+    appMenu.addItem(withTitle: "Dropdown Town 종료", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
     appItem.submenu = appMenu
 
     let viewItem = NSMenuItem(); main.addItem(viewItem)
