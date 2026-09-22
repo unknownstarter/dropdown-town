@@ -138,7 +138,7 @@
   <button id="sound">알림음 꺼짐</button>
 </header>
 <main><div id="stage"><canvas id="cv" width="480" height="300"></canvas><div id="labels"></div><button class="pan l" id="panL" title="왼쪽 보기">‹</button><button class="pan r" id="panR" title="오른쪽 보기">›</button></div>
-<div id="chatbar"><div id="chatlog"></div><form id="chatform"><input id="chatin" maxlength="120" placeholder="같은 방 사람들에게 한마디 (/ 키로 바로 입력)" autocomplete="off"><button type="submit">보내기</button></form></div>
+<div id="chatbar"><div id="chatlog"></div><form id="chatform"><input id="chatin" maxlength="120" placeholder="같은 방 사람들에게 한마디 (Enter 나 / 키로 바로 입력)" autocomplete="off"><button type="submit">보내기</button></form></div>
 <div id="list"></div></main>
 <aside id="panel"></aside>
 <div id="toasts"></div>
@@ -593,7 +593,7 @@ function refreshLabels(e) {
   const extra = !isSub(e) && s.subagents.length > 2 ? ` +${s.subagents.length - 2}` : ''
   e.tag.classList.toggle('mini', isSub(e))
   e.tag.classList.toggle('near', nearId === e.id)
-  e.tag.innerHTML = e.id === ME || s.kind === 'guest' ? `<i>${s.kind === 'guest' && !s.owner ? '☆' : '★'}</i>${esc(name)}` : isSub(e) ? `${s.role ? '' : '<i>조수</i>'}${esc(name)}` : `<i>${s.relay ? `릴레이 ${s.relay.step}/${s.relay.total}` : 'Lv.' + level(s.tokens)}</i>${esc(name)}${extra}`
+  e.tag.innerHTML = e.id === ME || s.kind === 'guest' ? `<i>${s.kind === 'guest' && !s.owner ? '☆' : '★'}</i>${esc(e.id === ME ? myName() : name)}` : isSub(e) ? `${s.role ? '' : '<i>조수</i>'}${esc(name)}` : `<i>${s.relay ? `릴레이 ${s.relay.step}/${s.relay.total}` : 'Lv.' + level(s.tokens)}</i>${esc(name)}${extra}`
   e.tag.classList.toggle('sel', selected === e.id)
   let html = ''
   // .d 는 넓은 창에서만, .c 는 좁은 창에서만 보인다(좁은 창에서는 짧은 상태만 띄우고 자세한 내용은 카드 목록이 맡는다)
@@ -958,7 +958,9 @@ const typing = () => { const a = document.activeElement; return a && (a.tagName 
 addEventListener('keydown', (ev) => {
   if (typing()) return
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(ev.code)) { keys.add(ev.code); ev.preventDefault() }
-  if ((ev.code === 'Enter' || ev.code === 'Space') && nearId) { ev.preventDefault(); selectEnt(nearId) }
+  // Enter: 동료 방에서는 채팅 입력, 내 사무실에서는 옆에 세션 캐릭터가 있으면 열고 아니면 채팅 입력. 스페이스는 늘 옆 캐릭터 열기.
+  if (ev.code === 'Enter') { ev.preventDefault(); if (room === 0 && nearId && ents.get(nearId)?.data.kind !== 'guest') selectEnt(nearId); else document.getElementById('chatin').focus() }
+  if (ev.code === 'Space' && nearId) { ev.preventDefault(); selectEnt(nearId) }
   if (ev.code === 'Escape') closePanel()
   if (ev.key === '/' ) { ev.preventDefault(); document.getElementById('chatin').focus() } // 슬래시로 채팅 입력
 })
@@ -971,7 +973,7 @@ document.getElementById('chatform').onsubmit = (ev) => {
   me.data.say = text; me.data.sayAt = Date.now(); me.data.sayId = Math.random().toString(36).slice(2, 12)
   refreshLabels(me); input.value = ''; input.blur()
   lastPush = 0; pushAvatar(me, true)
-  addChatLine({ id: me.data.sayId, name: me.look.nick || OWNER, text, at: me.data.sayAt, mine: true })
+  addChatLine({ id: me.data.sayId, name: myName(), text, at: me.data.sayAt, mine: true })
 }
 const chatSeen = new Set()
 function addChatLine(m) {
@@ -981,7 +983,10 @@ function addChatLine(m) {
   line.className = m.mine ? 'mine' : ''; line.innerHTML = `<b>${esc(m.name)}</b>${esc(m.text)}`
   log.append(line); while (log.children.length > 30) log.firstChild.remove(); log.scrollTop = log.scrollHeight
 }
-function syncChat(list) { for (const m of list || []) if (!chatSeen.has(m.id)) addChatLine({ ...m, mine: m.name === (ents.get(ME)?.look.nick || OWNER) }) }
+function syncChat(list) { for (const m of list || []) if (!chatSeen.has(m.id)) addChatLine({ ...m, mine: m.uid ? m.uid === myUid : m.name === myName() }) }
+// 아바타와 채팅에 쓰는 내 이름: 별명이 있으면 별명, 없으면 팀 창의 내 이름(기본은 맥 이름). 호칭 "마스터"는 모두가 같아서 쓰지 않는다.
+const myName = () => ents.get(ME)?.look.nick || teamState.share?.name || OWNER
+let myUid = ''
 function clearChat() { document.getElementById('chatlog').innerHTML = ''; chatSeen.clear() }
 addEventListener('keyup', (ev) => keys.delete(ev.code))
 addEventListener('blur', () => keys.clear())
@@ -1259,7 +1264,7 @@ document.getElementById('relayBtn').onclick = () => {
 // 0번 방은 내 사무실, 그다음은 등록한 동료들의 사무실이다. 탭이나 문으로 오가며, 동료 방은 구경만 한다.
 let rooms = [], room = 0, teamState = { share: {}, peers: [] }, lastRoomSwitch = 0, lastTeamKey = ''
 function setRooms(team, mySessions, myAgents, myRelay) {
-  teamState = team
+  teamState = team; myUid = team.id || ''
   rooms = [{ id: 'me', name: '내 사무실', ok: true, sessions: mySessions, agents: myAgents, relay: myRelay }, ...(team.peers || []).map((p) => ({ id: p.url, name: p.name || p.url, ok: p.ok, error: p.error, sessions: p.sessions || [], agents: p.agents || [], relay: p.relay || null, avatars: p.avatars || [], chat: p.chat || [] }))]
   if (room >= rooms.length) room = 0
   const cur = rooms[room]
@@ -1307,14 +1312,14 @@ function pushAvatar(me, moving) {
   lastPush = performance.now(); pushing = true
   const l = me.look
   const fresh = me.data.say && Date.now() - (me.data.sayAt || 0) < 15000
-  fetch('/api/action/avatar', { method: 'POST', headers: { 'content-type': 'application/json', 'x-town-token': TOKEN }, body: JSON.stringify({ room: rooms[room]?.id || 'me', name: l.nick || OWNER, x: Math.round(me.x), y: Math.round(me.y), dir: me.dir, say: fresh ? me.data.say : '', sayAt: fresh ? me.data.sayAt : 0, sayId: fresh ? me.data.sayId : '', look: { body: l.body, hairStyle: l.hairStyle, outfit: l.outfit, acc: l.acc, accColor: l.accColor, nick: l.nick, hair: l.hair, skin: l.skin, shirt: l.shirt } }) }).catch(() => {}).finally(() => { pushing = false })
+  fetch('/api/action/avatar', { method: 'POST', headers: { 'content-type': 'application/json', 'x-town-token': TOKEN }, body: JSON.stringify({ room: rooms[room]?.id || 'me', name: myName(), x: Math.round(me.x), y: Math.round(me.y), dir: me.dir, say: fresh ? me.data.say : '', sayAt: fresh ? me.data.sayAt : 0, sayId: fresh ? me.data.sayId : '', look: { body: l.body, hairStyle: l.hairStyle, outfit: l.outfit, acc: l.acc, accColor: l.accColor, nick: l.nick, hair: l.hair, skin: l.skin, shirt: l.shirt } }) }).catch(() => {}).finally(() => { pushing = false })
 }
 // 이 방에 있는 다른 사람들의 아바타(방 주인과 방문자). 새 위치로 걸어가고, 소식이 끊기면 사라진다.
 function syncGuests(list) {
-  const seen = new Set(), myName = ents.get(ME)?.look.nick || OWNER
+  const seen = new Set()
   for (const a of list || []) {
-    if (!a.name || a.name === myName) continue
-    const id = 'guest:' + a.name
+    if (!a.name || (a.uid ? a.uid === myUid : a.name === myName())) continue // 나 자신은 고유 번호로 가린다(이름은 모두 "마스터"일 수 있다)
+    const id = 'guest:' + (a.uid || a.name)
     seen.add(id)
     let g = ents.get(id)
     if (!g) { g = makeEnt({ id, kind: 'guest', owner: Boolean(a.owner), name: a.name, state: 'idle', detail: '', intent: '', tokens: 0, subagents: [], links: [], talks: [] }); g.zone = 'guest'; g.x = a.x; g.y = a.y }
