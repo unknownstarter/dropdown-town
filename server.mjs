@@ -193,19 +193,27 @@ const knownDirs = new Set()
 // 새 세션이나 릴레이를 열 수 있는 폴더. 세션이 돌았던 프로젝트 말고도 같은 맥의 다른 프로젝트를 고를 수 있게,
 // 흔한 프로젝트 폴더 모음(~/Documents/GitHub, ~/Projects 등) 바로 아래의 폴더를 후보로 올린다. 60초마다 다시 훑는다.
 const PROJECT_ROOTS = ['Documents/GitHub', 'Documents/Projects', 'Projects', 'projects', 'dev', 'src', 'code', 'workspace', 'repos', 'git'].map((d) => path.join(os.homedir(), d))
-let dirCache = { at: 0, value: [] }
-async function projectDirs() {
-  if (Date.now() - dirCache.at < 60000) return dirCache.value
-  const found = new Set(knownDirs)
-  for (const root of PROJECT_ROOTS) {
-    for (const name of await readdir(root).catch(() => [])) {
-      if (name.startsWith('.') || name === 'node_modules') continue
-      const full = path.join(root, name)
-      if ((await stat(full).catch(() => null))?.isDirectory()) found.add(full)
+// 주의: ~/Documents 같은 보호 폴더는 GUI 앱이 처음 읽을 때 macOS 허용 창이 뜨고, 답하기 전까지 읽기가 멈춘다.
+// 그래서 훑기는 뒤에서 하고, 화면 요청에는 마지막으로 훑은 값(처음엔 세션이 돌았던 폴더만)을 바로 준다.
+let dirCache = { at: 0, value: [] }, dirScanning = false
+async function scanProjectDirs() {
+  if (dirScanning) return
+  dirScanning = true
+  try {
+    const found = new Set(knownDirs)
+    for (const root of PROJECT_ROOTS) {
+      for (const name of await readdir(root).catch(() => [])) {
+        if (name.startsWith('.') || name === 'node_modules') continue
+        const full = path.join(root, name)
+        if ((await stat(full).catch(() => null))?.isDirectory()) found.add(full)
+      }
     }
-  }
-  dirCache = { at: Date.now(), value: [...found].sort() }
-  return dirCache.value
+    dirCache = { at: Date.now(), value: [...found].sort() }
+  } finally { dirScanning = false }
+}
+async function projectDirs() {
+  if (Date.now() - dirCache.at >= 60000) scanProjectDirs().catch(() => {})
+  return dirCache.at ? dirCache.value : [...knownDirs].sort()
 }
 // 직접 적어 넣은 폴더도 받되, 실제로 있는 폴더이고 홈 폴더 아래여야 한다(심볼릭 링크로 밖을 가리키는 것도 막는다).
 async function allowedDir(cwd) {
@@ -240,8 +248,16 @@ function projectLabel(encoded) { // 폴더 이름은 경로의 / 를 - 로 바�
   for (const d of knownDirs) if (encodeCwd(d) === base) return path.basename(d)
   return base.replace(encodeCwd(os.homedir()), '').replace(/^-+/, '') || base
 }
+// 명부도 같은 이유로 뒤에서 만들고 마지막 값을 바로 준다(프로젝트의 .claude/agents 가 보호 폴더 아래에 있을 수 있다).
+let rosterBuilding = false
 async function roster(sessionNames, workingIds) {
-  if (Date.now() - rosterCache.at < ROSTER_TTL) return rosterCache.value
+  if (Date.now() - rosterCache.at >= ROSTER_TTL && !rosterBuilding) {
+    rosterBuilding = true
+    buildRoster(sessionNames, workingIds).catch(() => {}).finally(() => { rosterBuilding = false })
+  }
+  return rosterCache.value
+}
+async function buildRoster(sessionNames, workingIds) {
   const defs = await agentDefs()
   const blank = (type, scope, description) => ({ type, scope, description, count: 0, lastAt: null, active: [], recent: [], byProject: {} })
   const agents = new Map([...defs].map(([type, d]) => [type, blank(type, d.scope, d.description)]))
@@ -579,19 +595,33 @@ function startShare() {
   shareServer.listen(config.share.port, '0.0.0.0')
 }
 function stopShare() { if (shareServer) { shareServer.close(); shareServer = null } }
-let peerCache = { at: 0, value: [] }
+// 동료 읽기는 화면 요청과 묶지 않는다. 뒤에서 2초마다 새로 읽어 두고 화면에는 마지막으로 읽은 값을 바로 준다.
+// 앱 안에서는 macOS 의 로컬 네트워크 허용 창이 뜬 동안 연결이 멈춰 시간 제한도 안 먹는 경우가 있어, 묶어 두면 화면 전체가 멈춘다.
+let peerCache = { at: 0, value: [] }, peerRefreshing = false
+const withTimeout = (p, ms, fallback) => Promise.race([p, new Promise((r) => setTimeout(() => r(fallback), ms))])
+async function refreshPeers() {
+  if (peerRefreshing) return
+  peerRefreshing = true
+  try {
+    const value = await Promise.all(config.peers.map((p) => withTimeout(fetchPeer(p), 4000, { url: p.url, name: p.name, ok: false, error: '응답이 없어요 (맥이 잠들었거나, 로컬 네트워크 접근이 아직 허용되지 않았을 수 있어요)' })))
+    peerCache = { at: Date.now(), value }
+  } finally { peerRefreshing = false }
+}
+setInterval(() => refreshPeers().catch(() => {}), 2000)
 async function fetchPeers() {
-  if (Date.now() - peerCache.at < 2000) return peerCache.value
-  const value = await Promise.all(config.peers.map(async (p) => {
+  if (!config.peers.length) return []
+  if (!peerCache.at) refreshPeers().catch(() => {}) // 첫 요청은 기다리지 않고 빈 값을 준다
+  return peerCache.value.length === config.peers.length ? peerCache.value : config.peers.map((p) => peerCache.value.find((v) => v.url === p.url) || { url: p.url, name: p.name, ok: false, error: '읽는 중' })
+}
+async function fetchPeer(p) {
+  {
     try {
       const r = await fetch(`${p.url.replace(/\/+$/, '')}/peer/sessions`, { headers: { 'x-town-key': p.key }, signal: AbortSignal.timeout(1500) })
       if (!r.ok) return { url: p.url, name: p.name, ok: false, error: r.status === 403 ? '키가 맞지 않아요' : `HTTP ${r.status}` }
       const j = await r.json()
       return { url: p.url, name: p.name || j.name, ok: true, sessions: j.sessions || [], agents: j.agents || [], relay: j.relay || null, avatars: Array.isArray(j.avatars) ? j.avatars.slice(0, 13).map((a) => ({ ...cleanAvatar(a), owner: Boolean(a.owner) })) : [], chat: Array.isArray(j.chat) ? j.chat.slice(-30).map((m) => ({ id: String(m.id || '').slice(0, 16), name: String(m.name || '').slice(0, 24), text: String(m.text || '').slice(0, 120), at: Number(m.at) || 0, owner: Boolean(m.owner) })) : [] }
     } catch (err) { return { url: p.url, name: p.name, ok: false, error: err.name === 'TimeoutError' ? '응답이 없어요 (맥이 잠들었거나 꺼져 있을 수 있어요)' : '연결하지 못했어요' } }
-  }))
-  peerCache = { at: Date.now(), value }
-  return value
+  }
 }
 const teamInfo = () => ({ id: config.id, share: { enabled: config.share.enabled, name: config.share.name, port: config.share.port, key: config.share.enabled ? config.share.key : null, addresses: lanAddresses(), listening: Boolean(shareServer), error: shareError }, peers: config.peers.map((p) => ({ url: p.url, name: p.name })) })
 const validPeerUrl = (u) => { try { const x = new URL(u); return ['http:', 'https:'].includes(x.protocol) ? x.origin : null } catch { return null } }
