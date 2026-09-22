@@ -523,6 +523,7 @@ async function publicSnapshot() {
     agents: data.agents.map((a) => ({ type: a.type, scope: a.scope, count: a.count, active: a.active, lastAt: a.lastAt, description: '', recent: [], byProject: a.byProject })),
     relay: data.relay && { name: data.relay.name, status: data.relay.status, step: data.relay.step, total: data.relay.total, jobs: data.relay.jobs, log: [] },
     avatars: liveAvatars(),
+    chat: chatLog.slice(-30),
   }
 }
 // 아바타 위치 공유: 화면이 내 아바타 위치를 이 서버에 알리고(avatar 동작), 내가 동료 방에 있으면 그 동료의 공유 포트로 밀어 준다.
@@ -530,7 +531,16 @@ async function publicSnapshot() {
 const VISITOR_TTL = 12000
 let myAvatar = null
 const visitors = new Map(), pushedAt = new Map()
-const cleanAvatar = (a) => ({ name: String(a.name || '').slice(0, 24), x: Number(a.x) || 0, y: Number(a.y) || 0, dir: ['up', 'down', 'left', 'right'].includes(a.dir) ? a.dir : 'down', look: a.look && typeof a.look === 'object' ? { body: Number(a.look.body) || 0, hairStyle: Number(a.look.hairStyle) || 0, outfit: Number(a.look.outfit) || 0, acc: String(a.look.acc || 'crown').slice(0, 12), accColor: String(a.look.accColor || '#ffffff').slice(0, 9), nick: String(a.look.nick || '').slice(0, 14), hair: String(a.look.hair || '#2b2230').slice(0, 9), skin: String(a.look.skin || '#f7d7b5').slice(0, 9), shirt: String(a.look.shirt || '#ff8a3d').slice(0, 9) } : {}, at: Date.now() })
+const cleanAvatar = (a) => ({ name: String(a.name || '').slice(0, 24), x: Number(a.x) || 0, y: Number(a.y) || 0, dir: ['up', 'down', 'left', 'right'].includes(a.dir) ? a.dir : 'down', look: a.look && typeof a.look === 'object' ? { body: Number(a.look.body) || 0, hairStyle: Number(a.look.hairStyle) || 0, outfit: Number(a.look.outfit) || 0, acc: String(a.look.acc || 'crown').slice(0, 12), accColor: String(a.look.accColor || '#ffffff').slice(0, 9), nick: String(a.look.nick || '').slice(0, 14), hair: String(a.look.hair || '#2b2230').slice(0, 9), skin: String(a.look.skin || '#f7d7b5').slice(0, 9), shirt: String(a.look.shirt || '#ff8a3d').slice(0, 9) } : {}, at: Date.now(),
+  say: typeof a.say === 'string' ? a.say.replace(/\s+/g, ' ').trim().slice(0, 120) : '', sayAt: Number(a.sayAt) || 0, sayId: String(a.sayId || '').slice(0, 16) })
+// 방 채팅: 방 주인과 방문자가 한 말을 이 방(내 서버)이 최근 50개까지 모아 두고, 방에 있는 모두에게 내보낸다.
+const chatLog = [], seenSay = new Set()
+function noteSay(a, owner) {
+  if (!a.say || !a.sayId || seenSay.has(a.sayId)) return
+  seenSay.add(a.sayId); if (seenSay.size > 500) seenSay.delete(seenSay.values().next().value)
+  chatLog.push({ id: a.sayId, name: a.name, text: a.say, at: a.sayAt || Date.now(), owner })
+  if (chatLog.length > 50) chatLog.shift()
+}
 function liveAvatars() { // 내 방에 있는 아바타들: 내 방에 있는 나 + 방문자들
   const out = []
   if (myAvatar && myAvatar.room === 'me' && Date.now() - myAvatar.at < VISITOR_TTL) out.push({ ...myAvatar, owner: true })
@@ -553,7 +563,7 @@ function startShare() {
     try {
       if (url.pathname === '/peer/avatar' && req.method === 'POST') { // 방문자 아바타 위치. 이름당 하나, 최대 12명
         const a = cleanAvatar(await readBody(req))
-        if (a.name && (visitors.has(a.name) || visitors.size < 12)) visitors.set(a.name, a)
+        if (a.name && (visitors.has(a.name) || visitors.size < 12)) { visitors.set(a.name, a); noteSay(a, false) }
         res.writeHead(200, { 'content-type': TYPES['.json'] }); res.end('{"ok":true}'); return
       }
       if (req.method !== 'GET') { res.writeHead(405).end(); return }
@@ -574,7 +584,7 @@ async function fetchPeers() {
       const r = await fetch(`${p.url.replace(/\/+$/, '')}/peer/sessions`, { headers: { 'x-town-key': p.key }, signal: AbortSignal.timeout(1500) })
       if (!r.ok) return { url: p.url, name: p.name, ok: false, error: r.status === 403 ? '키가 맞지 않아요' : `HTTP ${r.status}` }
       const j = await r.json()
-      return { url: p.url, name: p.name || j.name, ok: true, sessions: j.sessions || [], agents: j.agents || [], relay: j.relay || null, avatars: Array.isArray(j.avatars) ? j.avatars.slice(0, 13).map((a) => ({ ...cleanAvatar(a), owner: Boolean(a.owner) })) : [] }
+      return { url: p.url, name: p.name || j.name, ok: true, sessions: j.sessions || [], agents: j.agents || [], relay: j.relay || null, avatars: Array.isArray(j.avatars) ? j.avatars.slice(0, 13).map((a) => ({ ...cleanAvatar(a), owner: Boolean(a.owner) })) : [], chat: Array.isArray(j.chat) ? j.chat.slice(-30).map((m) => ({ id: String(m.id || '').slice(0, 16), name: String(m.name || '').slice(0, 24), text: String(m.text || '').slice(0, 120), at: Number(m.at) || 0, owner: Boolean(m.owner) })) : [] }
     } catch (err) { return { url: p.url, name: p.name, ok: false, error: err.name === 'TimeoutError' ? '응답이 없어요 (맥이 잠들었거나 꺼져 있을 수 있어요)' : '연결하지 못했어요' } }
   }))
   peerCache = { at: Date.now(), value }
@@ -586,7 +596,9 @@ Object.assign(ACTIONS, {
   // 화면이 알려 주는 내 아바타. 동료 방에 있으면 그 동료에게 250ms 에 한 번까지 밀어 준다(움직이지 않을 때는 화면이 3초마다 보낸다).
   avatar: ({ room, ...a }) => {
     myAvatar = { ...cleanAvatar({ ...a, name: a.name || config.share.name }), room: typeof room === 'string' ? room : 'me' }
-    if (myAvatar.room !== 'me' && Date.now() - (pushedAt.get(myAvatar.room) || 0) >= 250) pushAvatarTo(myAvatar.room)
+    if (myAvatar.room === 'me') noteSay(myAvatar, true)
+    else if (myAvatar.say && !seenSay.has(myAvatar.sayId)) { seenSay.add(myAvatar.sayId); pushAvatarTo(myAvatar.room) } // 말은 기다리지 않고 바로 보낸다
+    else if (Date.now() - (pushedAt.get(myAvatar.room) || 0) >= 250) pushAvatarTo(myAvatar.room)
     return { ok: true, output: '' }
   },
   shareOn: async ({ name }) => {
@@ -641,7 +653,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/sessions') {
       const [data, peers] = await Promise.all([collect(), fetchPeers()])
       res.writeHead(200, { 'content-type': TYPES['.json'], 'cache-control': 'no-store' })
-      res.end(JSON.stringify({ ...data, team: { ...teamInfo(), peers, visitors: liveAvatars().filter((a) => !a.owner) } }))
+      res.end(JSON.stringify({ ...data, team: { ...teamInfo(), peers, visitors: liveAvatars().filter((a) => !a.owner), chat: chatLog.slice(-30) } }))
       return
     }
     const rel = url.pathname === '/' ? 'index.html' : path.normalize(url.pathname).replace(/^[/\\]+/, '')
