@@ -26,6 +26,18 @@
   #clock { color:var(--dim); }
   body { display:flex; flex-direction:column; }
   main { flex:1; min-height:0; display:flex; flex-direction:column; align-items:center; padding:10px 12px; }
+  /* 큰 화면: 옆에 300px 이상 남으면 소식 창을 그림 오른쪽에 세운다. 그림은 세로를 꽉 채우고, 소식 창은 그림과 같은 높이로 스크롤된다. */
+  body.side main { flex-direction:row; align-items:flex-start; justify-content:center; gap:10px; }
+  /* 오른쪽 세로 칸은 소식 창이거나 상태창이다. 캐릭터를 누르면 상태창이 그 자리에 들어오고, 닫으면 소식 창으로 돌아온다(그림은 가리지 않는다). */
+  body.side #sidecol { width:260px; display:flex; flex-direction:column; }
+  body.side #chatbar { width:100%; margin-top:0; display:flex; flex-direction:column; flex:1; min-height:0; }
+  body.side.panel-open #chatbar { display:none; }
+  body.side #panel { position:static; width:100%; max-height:100%; flex:1; min-height:0; overflow:auto; }
+  #sidecol { display:contents; }
+  body.side #chatlog { flex:1; max-height:none; overflow:auto; }
+  body.side #chatbar:hover #chatlog, body.side #chatbar:focus-within #chatlog { position:static; max-height:none; padding:0; border:0; }
+  #chatbar h4 { margin:0 0 4px; font-size:11px; font-weight:normal; color:var(--dim); } body:not(.side) #chatbar h4 { display:none; }
+  #chatlog .sys { color:var(--dim); opacity:.8; } #chatlog .say b { color:#ff8a3d; } #chatlog .say { color:var(--ink); }
   #list { display:none; }
   /* 좁은 창(화면 옆 3분의 1 등): 위에는 사무실을 미니맵처럼, 아래에는 세션 카드 목록을 보여준다 */
   body.compact header { height:auto; flex-wrap:wrap; gap:6px; padding:8px 10px; font-size:11px; }
@@ -144,7 +156,7 @@
   <button id="sound">알림음 꺼짐</button>
 </header>
 <main><div id="stage"><canvas id="cv" width="480" height="300"></canvas><div id="labels"></div><button class="pan l" id="panL" title="왼쪽 보기">‹</button><button class="pan r" id="panR" title="오른쪽 보기">›</button></div>
-<div id="chatbar"><div id="chatlog"></div><form id="chatform"><input id="chatin" maxlength="120" placeholder="같은 방 사람들에게 한마디 (Enter 나 / 키로 바로 입력)" autocomplete="off"><button type="submit">보내기</button></form></div>
+<div id="sidecol"><div id="chatbar"><h4>이 방의 소식과 대화</h4><div id="chatlog"></div><form id="chatform"><input id="chatin" maxlength="120" placeholder="같은 방 사람들에게 한마디 (Enter 나 / 키로 바로 입력)" autocomplete="off"><button type="submit">보내기</button></form></div></div>
 <div id="list"></div></main>
 <aside id="panel"></aside>
 <div id="toasts"></div>
@@ -622,13 +634,15 @@ function sync(list) {
     seen.add(s.id)
     let e = ents.get(s.id)
     const zone = zoneOf(s)
-    if (!e) { e = makeEnt(s); moveTo(e, zone, firstLoad); if (!firstLoad) toast(`‘${s.name}’ 이(가) 출근했어요`) }
+    if (!e) { e = makeEnt(s); moveTo(e, zone, firstLoad); if (!firstLoad) { toast(`‘${s.name}’ 이(가) 출근했어요`); feed('sys', '', `‘${s.name}’ 출근`) } }
     else {
+      // 세션이 하는 일(말풍선)이 바뀌면 소식 창에도 남긴다
+      if (s.detail && s.detail !== e.data.detail && zone === 'work') feed('say', e.look.nick || s.name, s.detail)
       e.data = s
       if (zone !== e.zone && !e.leaving) {
         moveTo(e, zone, false)
-        if (zone === 'help') { toast(`‘${e.look.nick || s.name}’ 이(가) 호출 벨을 눌렀어요`); beep(880); panTo(W, 12000) }
-        if (zone === 'rest') { toast(`‘${e.look.nick || s.name}’ 작업이 끝났어요`); beep(523) }
+        if (zone === 'help') { toast(`‘${e.look.nick || s.name}’ 이(가) 호출 벨을 눌렀어요`); beep(880); panTo(W, 12000); feed('sys', '', `🔔 ‘${e.look.nick || s.name}’ 이(가) 답을 기다려요: ${clip((s.detail || '').replace(/\s+/g, ' '), 80)}`) }
+        if (zone === 'rest') { toast(`‘${e.look.nick || s.name}’ 작업이 끝났어요`); beep(523); feed('sys', '', `✅ ‘${e.look.nick || s.name}’ 작업 끝: ${clip((s.detail || '').replace(/\s+/g, ' '), 80)}`) }
       }
     }
     refreshLabels(e)
@@ -659,6 +673,7 @@ function sync(list) {
       planes.push({ from, to, t0: performance.now() })
       if (!isSub(from) && !isSub(to)) talkLinks.set([from.id, to.id].sort().join('|'), Date.now())
       toast(`‘${from.look.nick || from.data.name}’ 이(가) ‘${to.look.nick || to.data.name}’ 에게 ${t.handback ? '결과를 넘겼어요' : '메시지를 보냈어요'}`)
+      feed('sys', '', `✉ ‘${from.look.nick || from.data.name}’ → ‘${to.look.nick || to.data.name}’ ${t.handback ? '결과 넘김' : '메시지'}${t.text ? ': ' + clip(t.text, 80) : ''}`)
     }
     lastSeenMsg.set(s.id, Math.max(seenAt, ...talks.map((t) => t.at)))
   }
@@ -994,13 +1009,18 @@ document.getElementById('chatform').onsubmit = (ev) => {
   addChatLine({ id: me.data.sayId, name: myName(), text, at: me.data.sayAt, mine: true })
 }
 const chatSeen = new Set()
+// 소식 창 한 줄. kind 가 없으면 사람 채팅, 'say' 는 세션이 지금 하는 일, 'sys' 는 출근이나 호출 벨 같은 사건.
 function addChatLine(m) {
   if (!m.id || chatSeen.has(m.id)) return
   chatSeen.add(m.id)
   const log = document.getElementById('chatlog'), line = document.createElement('div')
-  line.className = m.mine ? 'mine' : ''; line.innerHTML = `<b>${esc(m.name)}</b>${esc(m.text)}`
-  log.append(line); while (log.children.length > 30) log.firstChild.remove(); log.scrollTop = log.scrollHeight
+  line.className = m.kind || (m.mine ? 'mine' : ''); line.innerHTML = m.kind === 'sys' ? esc(m.text) : `<b>${esc(m.name)}</b>${esc(m.text)}`
+  log.append(line); while (log.children.length > 60) log.firstChild.remove(); log.scrollTop = log.scrollHeight
 }
+// 상태창이 열리고 닫힐 때 body 에 표시를 남긴다(옆 배치에서 소식 창을 숨기고 보이는 데 쓴다)
+new MutationObserver(() => document.body.classList.toggle('panel-open', panel.style.display === 'block')).observe(panel, { attributes: true, attributeFilter: ['style'] })
+let feedSeq = 0
+const feed = (kind, name, text) => addChatLine({ id: 'f' + ++feedSeq, kind, name, text })
 function syncChat(list) { for (const m of list || []) if (!chatSeen.has(m.id)) addChatLine({ ...m, mine: m.uid ? m.uid === myUid : m.name === myName() }) }
 // 아바타와 채팅에 쓰는 내 이름: 별명이 있으면 별명, 없으면 팀 창의 내 이름(기본은 맥 이름). 호칭 "마스터"는 모두가 같아서 쓰지 않는다.
 const myName = () => ents.get(ME)?.look.nick || teamState.share?.name || OWNER
@@ -1459,20 +1479,36 @@ document.getElementById('panL').onclick = () => panTo(0, 30000)
 document.getElementById('panR').onclick = () => panTo(maxPan(), 30000)
 
 let compact = false
+const SIDE_W = 260 // 오른쪽 소식 창 너비(CSS 의 #sidecol 과 같아야 한다)
 function fit() {
   // 창이 좁으면(760px 미만) 압축 구성으로 바꾼다. 머리줄이 여러 줄로 접히므로 높이는 그때그때 잰다.
   const was = compact
   compact = innerWidth < 760
   document.body.classList.toggle('compact', compact)
   const headerH = document.querySelector('header').offsetHeight
-  const chatH = (document.getElementById('chatbar')?.offsetHeight || 40) + 6 // 그림 아래 채팅 칸 자리는 미리 빼 둔다
+  const chatH = (document.getElementById('chatbar')?.offsetHeight || 40) + 6 // 그림 아래에 둘 때 채팅 칸 자리는 미리 빼 둔다
+  let side = false
   if (compact) { // 세로 공간의 62% 까지 쓰면서 0.5 단위로 가장 큰 배율을 고르고, 너비는 들어오는 만큼만 비춘다(최소 250px 분량)
     const availW = innerWidth - 20
     scale = Math.max(1, Math.min(3, Math.floor((((innerHeight - headerH - chatH) * 0.62) / H) * 2) / 2))
     while (scale > 1 && availW / scale < 250) scale -= 0.5
     view.w = Math.min(W, Math.floor(availW / scale))
+  } else {
+    // 소식 창을 오른쪽에 세워도 그림이 2배 이상이고 아래 배치보다 크게 작아지지 않으면 옆에 둔다(그림은 세로를 꽉 채움). 아니면 그림 아래에 둔다.
+    // 배율은 0.1 단위: 0.5 단위로만 고르면 옆 칸 하나 때문에 그림이 한 단계(예: 2.5 에서 2.0) 뚝 떨어진다.
+    const fine = (x) => Math.max(1, Math.floor(x * 10) / 10)
+    const ah = innerHeight - headerH - 36, sideScale = fine(Math.min((innerWidth - 40 - SIDE_W - 10) / W, ah / H)), belowScale = fine(Math.min((innerWidth - 40) / W, (ah - chatH) / H))
+    side = sideScale >= 2 && sideScale >= belowScale - 0.25
+    scale = side ? sideScale : belowScale
+    view.w = W
   }
-  else { const aw = innerWidth - 40, ah = innerHeight - headerH - chatH - 36; scale = Math.max(1, Math.floor(Math.min(aw / W, ah / H) * 2) / 2); view.w = W }
+  document.body.classList.toggle('side', side)
+  const sidecol = document.getElementById('sidecol')
+  sidecol.style.height = side ? H * scale + 8 + 'px' : ''
+  document.getElementById('chatbar').style.height = ''
+  // 옆 배치에서는 상태창을 오른쪽 칸 안으로 옮겨 소식 창과 자리를 나눠 쓰고, 아니면 원래대로 화면 위에 띄운다
+  if (side && panel.parentElement !== sidecol) sidecol.prepend(panel)
+  if (!side && panel.parentElement === sidecol) document.body.append(panel)
   if (was !== compact) renderList(true)
   document.documentElement.style.setProperty('--s', scale)
   document.body.classList.toggle('tiny', compact && scale < 1.5)
