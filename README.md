@@ -103,6 +103,8 @@ claude --bg "이 폴더에 뭐가 있는지 요약해줘"
 | 끝난 세션 지우기 | 휴게실 캐릭터를 누르고 "세션 지우기". |
 | 새 일 시키기 | 오른쪽 위 "+ 새 세션"에서 프로젝트를 고르고 시킬 일을 적습니다. |
 | 내 에이전트 팀 보기 | 오른쪽 위 "직원 명부". 직접 만든 직군 에이전트별로 지금 어디서 일하는지, 몇 번 불렸는지, 최근에 맡은 일이 나옵니다. |
+| 조수(서브에이전트)가 뭘 하는지 보기 | 책상 옆 조수 머리 위에 최근에 쓴 도구와 마지막 말이 뜹니다. 조수를 누르면 부모 세션이 넘긴 지시문과 조수가 지금까지 한 말이 나옵니다. 조수가 결과를 돌려주면 종이비행기가 부모에게 날아갑니다. |
+| 에이전트들끼리 일을 이어서 하게 하기 (릴레이) | 오른쪽 위 "릴레이". 단계별 지시문을 최대 4개 적으면, 단계마다 새 세션이 열리고 앞 단계의 마지막 말이 다음 단계로 넘어갑니다(지시문의 `{{prev}}` 자리, 없으면 끝에 붙음). 진행 중인 세션은 주황 바통을 들고, 어느 단계가 답을 기다리면 호출 벨로 나옵니다. 위쪽 표시의 "멈춤"으로 언제든 끊을 수 있습니다. 단계마다 세션 하나가 새로 열리므로 토큰이 그만큼 듭니다. |
 | 캐릭터 꾸미기 | 캐릭터를 누르면 아래쪽에 별명, 몸, 머리, 옷, 장식(왕관, 고양이 귀, 리본)과 장식 색을 바꾸는 칸이 있습니다. |
 | 화면 옆에 세로로 붙여 두기 | 메뉴 "보기"의 "화면 왼쪽 3분의 1에 붙이기"(⌘[)나 "오른쪽"(⌘]). 창이 좁아지면 사무실을 줄이지 않고 크게 보여주면서, 카메라가 사람이 있는 쪽을 천천히 오갑니다. 누가 호출 벨을 누르면 그쪽을 비추고, 그림을 끌거나 양옆 화살표를 눌러 직접 움직일 수도 있습니다. 아래에는 세션 카드 목록이 나옵니다. "항상 위에 두기"(⌘T)와 같이 쓰면 좋습니다. |
 | 코드 편집기 옆에 작게 띄우기 | 메뉴 "보기"의 "작은 창으로"(⌘1). |
@@ -140,6 +142,7 @@ claude --bg "이 폴더에 뭐가 있는지 요약해줘"
 | --- | --- | --- |
 | 1 | 내 맥에서 도는 세션과 서브에이전트를 사무실로 구경하기, 직군 에이전트 명부 | 완료 |
 | 2 | 사무실 안에서 세션 다루기 (요청 내용 보기, 멈추기, 지우기, 새 일 시키기, 터미널에서 열기) | 첫 버전 완료. 사무실 안에서 바로 답하기는 예정 |
+| 2.5 | 자율 사무실: 조수의 일과 말 보기, 결과 넘김 표시, 에이전트끼리 일을 이어 하는 릴레이 | 첫 버전 완료. 세션끼리 직접 대화하는 모습과 릴레이 중간 개입은 예정 |
 | 3 | 사무실 안에 시뮬레이터(웹, 앱)와 브라우저 넣기. 에이전트가 만든 결과를 그 자리에서 확인 | 예정 |
 | 4 | 어디서든 접근. 휴대폰이나 다른 컴퓨터에서 내 사무실에 들어가기 | 예정 |
 | 5 | Windows, Linux 지원, 다국어, 다른 코딩 에이전트(Codex, Gemini CLI, Cursor 등) | 예정 |
@@ -261,6 +264,8 @@ claude --bg "Summarize what is in this folder"
 | Delete a finished session | Click it in the lounge, then "세션 지우기". |
 | Start new work | "+ 새 세션" at the top right: pick a project and describe the task. |
 | See your agent team | "직원 명부" at the top right: for each subagent you defined, where it is working now, how often it was called, and its recent tasks. |
+| See what a subagent is doing | Helpers next to a desk show their last tool and last words in a bubble. Click one to read the instruction its parent gave it and what it has said so far. When it hands its result back, a paper plane flies to the parent. |
+| Chain agents (relay) | "릴레이" at the top right. Write up to 4 step prompts; each step opens a new session and the previous step's last message is passed on (at `{{prev}}`, or appended). The running session carries an orange baton, a step that needs your answer shows up at the bell, and "멈춤" stops the chain at any time. Each step is a full session, so it costs tokens accordingly. |
 | Dress up a character | Click it and use the fields at the bottom of the panel. |
 | Dock it to the side of your screen | View menu: snap to the left third (⌘[) or right third (⌘]). In a narrow window the office stays large and a camera slowly pans between the sides where characters are. It jumps to the bell when someone needs you, and you can drag the scene or use the side arrows. A list of session cards sits below. Works well with Always on top (⌘T). |
 | Keep it small beside your editor | View menu: Compact window (⌘1). |
@@ -295,6 +300,7 @@ The goal is **access to your sessions from anywhere, built around a virtual offi
 | --- | --- | --- |
 | 1 | Watch local sessions and subagents in the office, staff roster for your own agents | Done |
 | 2 | Control sessions from the office (read requests, stop, delete, start new work, open in Terminal) | First version done. Answering from inside the office is planned |
+| 2.5 | Autonomous office: see what helpers do and say, hand-back animation, relay chains between agents | First version done. Session-to-session chat and mid-relay intervention are planned |
 | 3 | Simulators (web, app) and a browser inside the office, to check what agents built on the spot | Planned |
 | 4 | Access from anywhere: enter your office from a phone or another computer | Planned |
 | 5 | Windows and Linux, more languages, other coding agents (Codex, Gemini CLI, Cursor) | Planned |

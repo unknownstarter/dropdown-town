@@ -10,7 +10,8 @@
   * { box-sizing: border-box; }
   html, body { height:100%; margin:0; background:var(--bg); color:var(--ink);
     font-family: Galmuri11, ui-monospace, 'Apple SD Gothic Neo', monospace; font-size:13px; }
-  header { height:52px; display:flex; align-items:center; gap:14px; padding:0 16px; border-bottom:2px solid var(--line); }
+  header { height:52px; display:flex; align-items:center; gap:8px; padding:0 14px; border-bottom:2px solid var(--line); }
+  header button, .chip { white-space:nowrap; }
   h1 { font-size:16px; margin:0; letter-spacing:1px; }
   h1 span { color:var(--work); }
   .chip { padding:3px 9px; border:2px solid var(--line); border-radius:4px; background:var(--panel); white-space:nowrap; }
@@ -63,6 +64,7 @@
   .bubble span { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
   .bubble { max-width:calc(68px * var(--s)); } .bubble span { -webkit-line-clamp:1; } /* 책상 줄 간격이 좁아 한 줄만, 전체 내용은 패널에서 */
   .bubble.two span { -webkit-line-clamp:2; }
+  .bubble.sub { max-width:calc(46px * var(--s)); font-size:10px; } /* 조수 말풍선은 부모 것과 겹치지 않게 작게 */
   .bubble.help { border-color:#b8404e; background:#fff0f1; }
   .bubble.help { max-width:calc(47px * var(--s)); } .bubble.help span { -webkit-line-clamp:1; }
   .bubble em { font-style:normal; color:#b35c00; } .bubble u { text-decoration:none; } .bubble .c { display:none; }
@@ -116,6 +118,8 @@
   <div class="chip rest">쉬는 중 <b id="nRest">0</b></div>
   <div class="grow"></div>
   <span id="clock"></span>
+  <span class="chip" id="relayChip" style="display:none"><b id="relayText"></b> <button id="relayStop" class="danger" style="padding:0 6px;margin-left:6px">멈춤</button></span>
+  <button id="relayBtn">릴레이</button>
   <button id="rosterBtn">직원 명부</button>
   <button id="newBtn">+ 새 세션</button>
   <button id="style">캐릭터: 도트</button>
@@ -326,6 +330,10 @@ function drawZzz(c, x, y, t) {
     R(c, zx, zy, 3, 1, '#fff'); R(c, zx + 1, zy + 1, 1, 1, '#fff'); R(c, zx, zy + 2, 3, 1, '#fff')
   }
   c.globalAlpha = 1
+}
+function drawBaton(c, x, y, t) { // 릴레이 바통: 주황 깃발
+  const w = Math.floor(t / 250) % 2
+  R(c, x, y, 1, 9, '#fffdf6'); R(c, x + 1, y, 6 + w, 4, '#ff8a3d'); R(c, x + 1, y + 1, 3, 2, '#ffd27a')
 }
 function drawBang(c, x, y, t) {
   const b = Math.floor(t / 200) % 2
@@ -570,17 +578,20 @@ function refreshLabels(e) {
   const s = e.data, name = e.look.nick || s.name
   const extra = !isSub(e) && s.subagents.length > 2 ? ` +${s.subagents.length - 2}` : ''
   e.tag.classList.toggle('mini', isSub(e))
-  e.tag.innerHTML = isSub(e) ? `${s.role ? '' : '<i>조수</i>'}${esc(name)}` : `<i>Lv.${level(s.tokens)}</i>${esc(name)}${extra}`
+  e.tag.innerHTML = isSub(e) ? `${s.role ? '' : '<i>조수</i>'}${esc(name)}` : `<i>${s.relay ? `릴레이 ${s.relay.step}/${s.relay.total}` : 'Lv.' + level(s.tokens)}</i>${esc(name)}${extra}`
   e.tag.classList.toggle('sel', selected === e.id)
   let html = ''
   // .d 는 넓은 창에서만, .c 는 좁은 창에서만 보인다(좁은 창에서는 짧은 상태만 띄우고 자세한 내용은 카드 목록이 맡는다)
   if (e.zone === 'work') { const tk = s.phase === 'tool' ? toolKo(s.tool) : s.phase === 'thinking' ? '생각 중' : ''; html = (tk ? `<em>[${esc(tk)}]</em>` : '<em class="c">일하는 중</em>') + `<u class="d"> ${esc(s.detail || '')}</u>` }
+  else if (isSub(e) && !e.path.length) { const tk = s.phase === 'tool' ? toolKo(s.tool) : '생각 중'; html = `<em>[${esc(tk)}]</em><u class="d"> ${esc((s.lastText || s.description || '').replace(/\s+/g, ' '))}</u>` }
   else if (e.zone === 'help') html = `<em class="c">답이 필요해요</em><u class="d">${esc(s.detail || '답을 기다리고 있어요')}</u>`
-  e.bubble.className = 'bubble' + (e.zone === 'help' ? ' help' : '') + (e.zone === 'work' && e.slot < 4 ? ' two' : '') // 윗줄 책상은 말풍선 위가 벽이라 두 줄까지 보여준다
+  e.bubble.className = 'bubble' + (e.zone === 'help' ? ' help' : '') + (e.zone === 'work' && e.slot < 4 ? ' two' : '') + (isSub(e) ? ' sub' : '') // 윗줄 책상은 말풍선 위가 벽이라 두 줄까지 보여준다
   e.bubble.innerHTML = html ? `<span>${html}</span>` : ''
   e.bubble.dataset.empty = html ? '' : '1'
 }
 
+const lastSeenMsg = new Map(), planes = []
+const nameOfAgent = (id) => { const sub = ents.get('sub-' + id); return sub ? sub.look.nick || sub.data.name : id }
 function sync(list) {
   const seen = new Set()
   for (const s of list) {
@@ -600,7 +611,7 @@ function sync(list) {
     // 서브에이전트는 작업모를 쓴 조수로 등장한다(책상 옆 자리가 둘뿐이라 둘까지만 그리고, 나머지는 이름표에 +N)
     s.subagents.slice(0, 2).forEach((a, k) => {
       const role = agentIndex.get(a.type)?.scope !== 'builtin' && agentIndex.has(a.type)
-      const id = 'sub-' + a.id, data = { id, kind: 'sub', role, lookKey: 'agent:' + a.type, name: a.type, parent: s.id, description: a.description, updatedAt: a.at, tokens: 0, subagents: [] }
+      const id = 'sub-' + a.id, data = { id, kind: 'sub', role, lookKey: 'agent:' + a.type, name: a.type, parent: s.id, description: a.description, updatedAt: a.at, tokens: 0, subagents: [], tool: a.tool, phase: a.phase, lastText: a.lastText, instruction: a.instruction }
       seen.add(id)
       let sub = ents.get(id)
       const spot = subSpot(e, k)
@@ -608,6 +619,13 @@ function sync(list) {
       else { sub.data = data; if (!sub.leaving && (spot.x !== sub.spot.x || spot.y !== sub.spot.y)) walkTo(sub, spot, false) }
       refreshLabels(sub)
     })
+  }
+  for (const s of list) { // 새로 받은 메시지가 있으면 보낸 쪽에서 받은 쪽으로 종이비행기를 날린다
+    const r = s.received
+    if (!r || r.at <= (lastSeenMsg.get(s.id) || (firstLoad ? r.at : 0))) continue
+    lastSeenMsg.set(s.id, r.at)
+    const to = ents.get(s.id), from = ents.get('sub-' + r.from) || [...ents.values()].find((e) => !isSub(e) && e.data.name === r.from)
+    if (from && to && from !== to) { planes.push({ from, to, t0: performance.now() }); toast(`‘${from.look.nick || from.data.name}’ 이(가) ‘${to.look.nick || s.name}’ 에게 ${r.handback ? '결과를 넘겼어요' : '메시지를 보냈어요'}`) }
   }
   for (const e of ents.values()) if (!seen.has(e.id) && !e.leaving) leave(e)
   const preselect = firstLoad && new URLSearchParams(location.search).get('select') // 주소의 ?select=세션id 로 그 캐릭터 패널을 연 채 시작한다
@@ -688,6 +706,14 @@ function frame(t, manual) {
   }
   items.sort((a, b) => a.base - b.base)
   for (const it of items) it.draw(ctx)
+  for (let i = planes.length - 1; i >= 0; i--) { // 종이비행기: 1.4초 동안 포물선을 그리며 날아간다
+    const p = planes[i], k = (t - p.t0) / 1400
+    if (k >= 1) { planes.splice(i, 1); continue }
+    const fy = p.from.hy ?? p.from.y, ty = p.to.hy ?? p.to.y
+    const x = p.from.x + (p.to.x - p.from.x) * k, y = fy + (ty - fy) * k - Math.sin(k * Math.PI) * 26
+    R(ctx, x + 2, y, 8, 5, '#fffdf6'); R(ctx, x + 2, y, 8, 1, '#2a2233'); R(ctx, x + 2, y, 1, 5, '#2a2233'); R(ctx, x + 9, y, 1, 5, '#2a2233'); R(ctx, x + 2, y + 4, 8, 1, '#2a2233'); R(ctx, x + 4, y + 2, 4, 1, '#d9483b')
+  }
+  if (relayState && ['running', 'blocked'].includes(relayState.status)) for (const e of ents.values()) if (e.data.relay) drawBaton(ctx, e.x + 14, (e.hy ?? e.y) + 4, t) // 릴레이 바통: 머리 오른쪽(말풍선 아래)에 든다
   for (const z of zoneEls) { z.style.left = (z.dataset.x - camX) * scale + 'px'; z.style.top = z.dataset.y * scale + 'px' }
   document.getElementById('panL').style.opacity = view.target > 0 ? 1 : 0.35; document.getElementById('panR').style.opacity = view.target < maxPan() ? 1 : 0.35
   if (!manual) requestAnimationFrame(frame)
@@ -730,7 +756,9 @@ function renderPanel(full = true) {
     <dl>
       <dt>상태</dt><dd><span class="badge" style="background:${color}">${s.state === 'stopped' ? '멈춤' : label}</span> ${s.kind === 'interactive' ? '(터미널 세션)' : ''}</dd>
       <dt>지금</dt><dd>${esc(s.detail || '기록 없음')}${s.phase === 'tool' ? ` <span style="color:var(--work)">[${esc(toolKo(s.tool))}]</span>` : ''}</dd>
-      ${s.subagents.length ? `<dt>조수</dt><dd>${s.subagents.map((a) => `${esc(a.type)}: ${esc(a.description)}`).join('<br>')}</dd>` : ''}
+      ${s.subagents.length ? `<dt>조수</dt><dd>${s.subagents.map((a) => `<b style="font-weight:normal;color:var(--work)">${esc(a.type)}</b> ${esc(a.description)}${a.lastText ? `<br><span style="color:var(--dim)">${esc(clip(a.lastText.replace(/\s+/g, ' '), 140))}</span>` : ''}`).join('<br>')}</dd>` : ''}
+      ${s.received ? `<dt>받은 메시지</dt><dd>${esc(nameOfAgent(s.received.from))} 에게서, ${ago(s.received.at)}</dd>` : ''}
+      ${s.relay ? `<dt>릴레이</dt><dd>${esc(s.relay.name)} ${s.relay.step}/${s.relay.total} 단계</dd>` : ''}
       ${s.intent ? `<dt>받은 요청</dt><dd>${esc(clip(s.intent, 220))}</dd>` : ''}
       ${s.permissionMode ? `<dt>권한 모드</dt><dd>${esc(MODE_KO[s.permissionMode] || s.permissionMode)}</dd>` : ''}
       <dt>위치</dt><dd>${esc(s.project || '')}${s.worktree ? '<br>' + esc(s.worktree) : ''}</dd>
@@ -784,7 +812,10 @@ function renderSubPanel(e) {
     <dt>역할</dt><dd><span class="badge" style="background:var(--work)">조수(서브에이전트)</span></dd>
     <dt>맡은 일</dt><dd>${esc(s.description || '기록 없음')}</dd>
     <dt>부른 세션</dt><dd>${esc(parent ? parent.look.nick || parent.data.name : s.parent)}</dd>
+    <dt>지금</dt><dd>${s.phase === 'tool' ? `[${esc(toolKo(s.tool))}]` : '생각 중'}</dd>
     <dt>마지막 기록</dt><dd>${ago(s.updatedAt)}</dd></dl>
+    <h3>부모 세션이 넘긴 일</h3><div class="ask">${esc(s.instruction || '기록을 찾지 못했어요')}</div>
+    <h3>조수가 지금까지 한 말</h3><div class="ask">${esc(s.lastText || '아직 없어요')}</div>
     <div class="acts" style="margin-top:12px"><button class="primary" id="toRoster">직원 명부에서 보기</button></div>`
   panel.querySelector('#toRoster').onclick = () => openRoster(s.name)
   panel.querySelector('h2').textContent = e.look.nick || s.name
@@ -944,6 +975,46 @@ document.getElementById('newBtn').onclick = () => {
   }
 }
 
+/* ---------- 릴레이(자율 사무실 첫 버전) ---------- */
+// 사람이 한 번 시작하면 단계마다 새 세션이 열리고 앞 단계의 마지막 말이 다음 단계로 넘어간다. 막히면 호출 벨로 나오고 언제든 멈출 수 있다.
+let relayState = null
+const RELAY_KO = { starting: '시작 중', running: '진행 중', blocked: '답 기다리는 중', done: '완료', failed: '실패', stopped: '멈춤' }
+function setRelay(r) {
+  const prev = relayState; relayState = r
+  const chip = document.getElementById('relayChip'), stop = document.getElementById('relayStop')
+  chip.style.display = r ? '' : 'none'
+  if (!r) return
+  document.getElementById('relayText').textContent = `릴레이 ${Math.min(r.step, r.total)}/${r.total} ${RELAY_KO[r.status] || r.status}`
+  chip.title = `${r.name}: ${r.log.join(' / ')}`
+  stop.textContent = ['running', 'blocked'].includes(r.status) ? '멈춤' : '닫기'
+  if (prev && prev.status !== r.status && r.status === 'done') { toast(`릴레이 ‘${r.name}’ 이(가) 끝났어요`); beep(659) }
+  if (prev && prev.status !== r.status && r.status === 'blocked') beep(880)
+}
+document.getElementById('relayStop').onclick = () => (['running', 'blocked'].includes(relayState?.status)
+  ? ask('릴레이를 멈출까요?', '지금 단계의 세션을 멈추고 더 진행하지 않아요.', '멈추기').then((ok) => ok && act('relayStop', {}))
+  : act('relayClear', {}))
+document.getElementById('relayBtn').onclick = () => {
+  if (!knownDirs.length) return toast('아직 세션이 돌았던 프로젝트 폴더가 없어요.')
+  if (relayState && ['running', 'blocked'].includes(relayState.status)) return toast('이미 도는 릴레이가 있어요. 먼저 멈춰 주세요.')
+  const hints = ['예: 이 프로젝트의 README 를 읽고 부족한 설명 3가지를 골라 주세요', '예: 앞 단계가 고른 3가지를 README 에 반영해 주세요', '예: 바뀐 README 를 검토하고 어색한 문장을 고쳐 주세요', '']
+  modalBox.innerHTML = `<h2>릴레이 시작</h2>
+    <p>단계마다 새 세션이 열리고, 앞 단계의 마지막 말이 다음 단계로 넘어갑니다. 지시문에 <code>{{prev}}</code> 를 쓰면 그 자리에 들어가고, 없으면 끝에 붙습니다. 어느 단계가 답을 기다리면 호출 벨로 나오고, 언제든 멈출 수 있어요.</p>
+    <label>어느 프로젝트에서</label><select id="mDir">${knownDirs.map((d) => `<option value="${esc(d)}">${esc(d.split('/').pop())} (${esc(d)})</option>`).join('')}</select>
+    <label>릴레이 이름</label><input type="text" id="mName" maxlength="24" placeholder="예: 기획에서 리뷰까지" style="width:100%;font:inherit;color:var(--ink);background:var(--bg);border:2px solid var(--line);border-radius:4px;padding:6px">
+    ${[1, 2, 3, 4].map((n) => `<label>${n}단계 지시문${n > 1 ? ' (비우면 여기서 끝)' : ''}</label><textarea id="mStep${n}" style="height:64px" placeholder="${hints[n - 1]}"></textarea>`).join('')}
+    <p class="hint">단계마다 세션 하나가 새로 열리므로 토큰이 그만큼 듭니다. 권한 모드는 Claude Code 설정을 따릅니다.</p>
+    <div class="row"><button id="mNo">취소</button><button id="mYes" class="primary">시작</button></div>`
+  modal.style.display = 'flex'
+  modalBox.querySelector('#mStep1').focus()
+  modalBox.querySelector('#mNo').onclick = closeModal
+  modalBox.querySelector('#mYes').onclick = async () => {
+    const steps = [1, 2, 3, 4].map((n) => modalBox.querySelector('#mStep' + n).value.trim()).filter(Boolean)
+    if (!steps.length) return toast('1단계 지시문을 적어 주세요')
+    const cwd = modalBox.querySelector('#mDir').value, name = modalBox.querySelector('#mName').value.trim() || '릴레이'
+    closeModal(); await act('relayStart', { cwd, name, steps })
+  }
+}
+
 /* ---------- 알림 ---------- */
 function toast(msg) {
   const el = document.createElement('div'); el.className = 'toast'; el.textContent = msg
@@ -1068,6 +1139,7 @@ async function poll() {
     const res = await fetch('/api/sessions', { cache: 'no-store' })
     const data = await res.json()
     knownDirs = data.dirs || []
+    setRelay(data.relay || null)
     setAgents(data.agents || [])
     sync(data.sessions)
     document.getElementById('offline').style.display = 'none'
