@@ -502,12 +502,14 @@ const TYPES = { '.html': 'text/html; charset=utf-8', '.png': 'image/png', '.json
 // 초대 주소와 키를 아는 맥만 읽을 수 있다. 제어(멈춤, 새 세션, 릴레이)는 절대 내보내지 않는다.
 // 다른 맥을 "동료"로 등록하면 이 서버가 대신 읽어 와서 화면에 방으로 보여준다. 설정은 ~/.dropdown-town/config.json 에 남는다.
 const CONFIG_DIR = path.join(os.homedir(), '.dropdown-town'), CONFIG_FILE = path.join(CONFIG_DIR, 'config.json')
-let config = { share: { enabled: false, key: null, name: os.hostname().split('.')[0], port: 4778 }, peers: [] }
+// id: 이 설치를 구분하는 고유 번호. 아바타와 채팅은 이름이 아니라 이 번호로 "나"를 가린다(모두가 기본 호칭 "마스터"라 이름으로는 못 가린다).
+let config = { id: null, share: { enabled: false, key: null, name: os.hostname().split('.')[0], port: 4778 }, peers: [] }
 async function loadConfig() {
   try {
     const j = JSON.parse(await readFile(CONFIG_FILE, 'utf8'))
-    config = { share: { ...config.share, ...(j.share || {}) }, peers: Array.isArray(j.peers) ? j.peers.filter((p) => p && typeof p.url === 'string' && typeof p.key === 'string') : [] }
+    config = { id: typeof j.id === 'string' ? j.id : null, share: { ...config.share, ...(j.share || {}) }, peers: Array.isArray(j.peers) ? j.peers.filter((p) => p && typeof p.url === 'string' && typeof p.key === 'string') : [] }
   } catch {}
+  if (!config.id) { config.id = randomBytes(6).toString('hex'); await saveConfig().catch(() => {}) }
 }
 async function saveConfig() {
   await mkdir(CONFIG_DIR, { recursive: true })
@@ -531,14 +533,14 @@ async function publicSnapshot() {
 const VISITOR_TTL = 12000
 let myAvatar = null
 const visitors = new Map(), pushedAt = new Map()
-const cleanAvatar = (a) => ({ name: String(a.name || '').slice(0, 24), x: Number(a.x) || 0, y: Number(a.y) || 0, dir: ['up', 'down', 'left', 'right'].includes(a.dir) ? a.dir : 'down', look: a.look && typeof a.look === 'object' ? { body: Number(a.look.body) || 0, hairStyle: Number(a.look.hairStyle) || 0, outfit: Number(a.look.outfit) || 0, acc: String(a.look.acc || 'crown').slice(0, 12), accColor: String(a.look.accColor || '#ffffff').slice(0, 9), nick: String(a.look.nick || '').slice(0, 14), hair: String(a.look.hair || '#2b2230').slice(0, 9), skin: String(a.look.skin || '#f7d7b5').slice(0, 9), shirt: String(a.look.shirt || '#ff8a3d').slice(0, 9) } : {}, at: Date.now(),
+const cleanAvatar = (a) => ({ uid: String(a.uid || '').replace(/[^a-z0-9]/gi, '').slice(0, 16), name: String(a.name || '').slice(0, 24), x: Number(a.x) || 0, y: Number(a.y) || 0, dir: ['up', 'down', 'left', 'right'].includes(a.dir) ? a.dir : 'down', look: a.look && typeof a.look === 'object' ? { body: Number(a.look.body) || 0, hairStyle: Number(a.look.hairStyle) || 0, outfit: Number(a.look.outfit) || 0, acc: String(a.look.acc || 'crown').slice(0, 12), accColor: String(a.look.accColor || '#ffffff').slice(0, 9), nick: String(a.look.nick || '').slice(0, 14), hair: String(a.look.hair || '#2b2230').slice(0, 9), skin: String(a.look.skin || '#f7d7b5').slice(0, 9), shirt: String(a.look.shirt || '#ff8a3d').slice(0, 9) } : {}, at: Date.now(),
   say: typeof a.say === 'string' ? a.say.replace(/\s+/g, ' ').trim().slice(0, 120) : '', sayAt: Number(a.sayAt) || 0, sayId: String(a.sayId || '').slice(0, 16) })
 // 방 채팅: 방 주인과 방문자가 한 말을 이 방(내 서버)이 최근 50개까지 모아 두고, 방에 있는 모두에게 내보낸다.
 const chatLog = [], seenSay = new Set()
 function noteSay(a, owner) {
   if (!a.say || !a.sayId || seenSay.has(a.sayId)) return
   seenSay.add(a.sayId); if (seenSay.size > 500) seenSay.delete(seenSay.values().next().value)
-  chatLog.push({ id: a.sayId, name: a.name, text: a.say, at: a.sayAt || Date.now(), owner })
+  chatLog.push({ id: a.sayId, uid: a.uid, name: a.name, text: a.say, at: a.sayAt || Date.now(), owner })
   if (chatLog.length > 50) chatLog.shift()
 }
 function liveAvatars() { // 내 방에 있는 아바타들: 내 방에 있는 나 + 방문자들
@@ -563,7 +565,8 @@ function startShare() {
     try {
       if (url.pathname === '/peer/avatar' && req.method === 'POST') { // 방문자 아바타 위치. 이름당 하나, 최대 12명
         const a = cleanAvatar(await readBody(req))
-        if (a.name && (visitors.has(a.name) || visitors.size < 12)) { visitors.set(a.name, a); noteSay(a, false) }
+        const vkey = a.uid || a.name
+        if (vkey && a.uid !== config.id && (visitors.has(vkey) || visitors.size < 12)) { visitors.set(vkey, a); noteSay(a, false) }
         res.writeHead(200, { 'content-type': TYPES['.json'] }); res.end('{"ok":true}'); return
       }
       if (req.method !== 'GET') { res.writeHead(405).end(); return }
@@ -590,12 +593,12 @@ async function fetchPeers() {
   peerCache = { at: Date.now(), value }
   return value
 }
-const teamInfo = () => ({ share: { enabled: config.share.enabled, name: config.share.name, port: config.share.port, key: config.share.enabled ? config.share.key : null, addresses: lanAddresses(), listening: Boolean(shareServer), error: shareError }, peers: config.peers.map((p) => ({ url: p.url, name: p.name })) })
+const teamInfo = () => ({ id: config.id, share: { enabled: config.share.enabled, name: config.share.name, port: config.share.port, key: config.share.enabled ? config.share.key : null, addresses: lanAddresses(), listening: Boolean(shareServer), error: shareError }, peers: config.peers.map((p) => ({ url: p.url, name: p.name })) })
 const validPeerUrl = (u) => { try { const x = new URL(u); return ['http:', 'https:'].includes(x.protocol) ? x.origin : null } catch { return null } }
 Object.assign(ACTIONS, {
   // 화면이 알려 주는 내 아바타. 동료 방에 있으면 그 동료에게 250ms 에 한 번까지 밀어 준다(움직이지 않을 때는 화면이 3초마다 보낸다).
   avatar: ({ room, ...a }) => {
-    myAvatar = { ...cleanAvatar({ ...a, name: a.name || config.share.name }), room: typeof room === 'string' ? room : 'me' }
+    myAvatar = { ...cleanAvatar({ ...a, uid: config.id, name: a.name || config.share.name }), room: typeof room === 'string' ? room : 'me' }
     if (myAvatar.room === 'me') noteSay(myAvatar, true)
     else if (myAvatar.say && !seenSay.has(myAvatar.sayId)) { seenSay.add(myAvatar.sayId); pushAvatarTo(myAvatar.room) } // 말은 기다리지 않고 바로 보낸다
     else if (Date.now() - (pushedAt.get(myAvatar.room) || 0) >= 250) pushAvatarTo(myAvatar.room)
