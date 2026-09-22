@@ -960,12 +960,20 @@ function stepAvatar(me, dt) {
 }
 const typing = () => { const a = document.activeElement; return a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT') || modal.style.display === 'flex' }
 addEventListener('keydown', (ev) => {
+  // Esc 는 입력 중이어도 동작한다: 큰 창(릴레이, 팀, 새 세션)에서는 먼저 입력 칸에서 나오고 한 번 더 누르면 창을 닫는다. 캐릭터 패널은 바로 닫는다.
+  if (ev.code === 'Escape') {
+    ev.preventDefault()
+    const a = document.activeElement, inField = a && ['INPUT', 'TEXTAREA', 'SELECT'].includes(a.tagName)
+    if (modal.style.display === 'flex') { if (inField) a.blur(); else { closeModal(); delete modal.dataset.kind } return }
+    if (inField) a.blur()
+    if (panel.style.display === 'block') closePanel()
+    return
+  }
   if (typing()) return
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(ev.code)) { keys.add(ev.code); ev.preventDefault() }
   // Enter: 동료 방에서는 채팅 입력, 내 사무실에서는 옆에 세션 캐릭터가 있으면 열고 아니면 채팅 입력. 스페이스는 늘 옆 캐릭터 열기.
   if (ev.code === 'Enter') { ev.preventDefault(); if (room === 0 && nearId && ents.get(nearId)?.data.kind !== 'guest') selectEnt(nearId); else document.getElementById('chatin').focus() }
   if (ev.code === 'Space' && nearId) { ev.preventDefault(); selectEnt(nearId) }
-  if (ev.code === 'Escape') closePanel()
   if (ev.key === '/' ) { ev.preventDefault(); document.getElementById('chatin').focus() } // 슬래시로 채팅 입력
 })
 // 방 채팅: 보내면 내 아바타 위에 말풍선이 뜨고, 서버를 거쳐 같은 방 사람들에게도 보인다
