@@ -797,8 +797,12 @@ function actsBlock(e) {
     <details><summary>터미널 명령으로 직접 하기</summary><div class="cmds">${cmds.map(([label, cmd]) => `<div><span>${label}</span><code>${cmd}</code><button data-copy="${cmd}">복사</button></div>`).join('')}</div></details>`
 }
 const STATE_KO = { work: ['일하는 중', 'var(--work)'], help: [`${OWNER} 기다리는 중`, 'var(--help)'], rest: ['쉬는 중', 'var(--rest)'] }
+// 입력 중인 창은 다시 그리지 않는다. 다시 그리면 입력 칸이 새것으로 바뀌어 커서와 포커스가 날아간다.
+const typingIn = (el) => el.contains(document.activeElement) && ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)
 function renderPanel(full = true) {
   const e = ents.get(selected); if (!e) return
+  if (!full && typingIn(panel)) return
+  if (!full && (e.id === ME || e.data.kind === 'guest')) return // 내 아바타와 방문자 패널은 2초마다 바뀔 내용이 없다
   if (isSub(e)) return renderSubPanel(e)
   if (e.id === ME) return renderMePanel(e)
   if (e.data.kind === 'guest') { panel.innerHTML = `<button class="x">×</button><h2>${esc(e.look.nick || e.data.name)}</h2><p class="hint">${room === 0 ? '내 사무실에 놀러 온 동료예요.' : '이 사무실 주인이거나 같이 구경 중인 동료예요.'}</p>`; panel.style.display = 'block'; panel.querySelector('.x').onclick = closePanel; return }
@@ -1063,7 +1067,7 @@ function openRoster(type = null) { const prev = ents.get(selected); selected = n
 function renderRoster(force) {
   const list = agentsData.filter((a) => !rosterProject || a.byProject[rosterProject])
   const key = JSON.stringify([rosterPick, rosterProject, style, spritesReady, list.map((a) => [a.type, a.count, a.active.length, a.lastAt])])
-  if (!force && panel.dataset.rosterKey === key) return
+  if (!force && (panel.dataset.rosterKey === key || typingIn(panel))) return
   panel.dataset.rosterKey = key
   panel.style.display = 'block'
   const a = rosterPick && agentIndex.get(rosterPick)
@@ -1188,7 +1192,7 @@ function setRelay(r) {
   if (prev && prev.status !== r.status && r.status === 'done') { toast(`릴레이 ‘${r.name}’ 이(가) 끝났어요`); beep(659) }
   if (prev && prev.status !== r.status && r.status === 'blocked') beep(880)
   if (prev && prev.status !== r.status && r.status === 'review') { toast(`릴레이 ‘${r.name}’ ${r.step - 1}단계 결과를 확인해 주세요`); beep(880); openRelayPanel() }
-  if (modal.dataset.kind === 'relay' && modal.style.display === 'flex' && prev && (prev.status !== r.status || prev.step !== r.step)) openRelayPanel() // 열어 둔 관리 창은 상태가 바뀔 때만 새로 그린다(입력 중인 글이 날아가지 않게)
+  if (modal.dataset.kind === 'relay' && modal.style.display === 'flex' && prev && (prev.status !== r.status || prev.step !== r.step) && !typingIn(modalBox)) openRelayPanel() // 열어 둔 관리 창은 상태가 바뀔 때만 새로 그린다(입력 중인 글이 날아가지 않게)
 }
 document.getElementById('relayStop').onclick = (ev) => { ev.stopPropagation(); (RELAY_ACTIVE.includes(relayState?.status)
   ? ask('릴레이를 멈출까요?', '지금 단계의 세션을 멈추고 더 진행하지 않아요.', '멈추기').then((ok) => ok && act('relayStop', {}))
@@ -1345,7 +1349,7 @@ function openTeamPanel(fresh) {
   modalBox.innerHTML = `<h2>팀: 사무실 서로 구경하기</h2>
     <p>같은 와이파이(또는 Tailscale 같은 사설망)에 있는 동료의 맥과 사무실을 서로 구경할 수 있어요. 구경만 되고, 세션을 멈추거나 새로 여는 것은 각자 자기 맥에서만 됩니다.</p>
     <h3 style="margin:14px 0 6px">1. 내 사무실 공유</h3>
-    <label>내 이름 (동료 화면의 탭에 보여요)</label><input type="text" id="tName" maxlength="24" value="${esc(draftName ?? s.name ?? '')}" style="width:100%;font:inherit;color:var(--ink);background:var(--bg);border:2px solid var(--line);border-radius:4px;padding:6px">
+    <label>내 이름 (동료 화면의 탭에 보여요. Enter 를 치거나 칸 밖을 누르면 저장돼요)</label><input type="text" id="tName" maxlength="24" value="${esc(draftName ?? s.name ?? '')}" style="width:100%;font:inherit;color:var(--ink);background:var(--bg);border:2px solid var(--line);border-radius:4px;padding:6px">
     ${s.enabled ? `<div class="ask" style="margin-top:8px">초대 주소: <code>http://${esc(addr || '이 맥의 IP')}:${s.port}</code><br>초대 키: <code>${esc(s.key || '')}</code><br><small style="color:var(--dim)">동료가 자기 앱의 팀 창에서 이 둘을 넣으면 내 사무실이 보여요. 키는 비밀번호처럼 다뤄 주세요.${(s.addresses || []).length > 1 ? ' 다른 주소: ' + esc(s.addresses.slice(1).join(', ')) : ''}${s.listening ? '' : ' <b style="color:var(--help)">지금 공유 서버가 떠 있지 않아요' + (s.error ? ': ' + esc(s.error) : '') + '</b>'}</small></div>
       <div class="acts" style="margin-top:8px"><button data-copy="http://${esc(addr || '')}:${s.port}">주소 복사</button><button data-copy="${esc(s.key || '')}">키 복사</button><button id="tNewKey">키 새로 만들기</button><button id="tOff" class="danger">공유 끄기</button></div>`
       : `<div class="acts" style="margin-top:8px"><button id="tOn" class="primary">공유 켜기</button></div><p class="hint">켜면 이 맥의 ${s.port || 4778}번 포트로 세션 정보를 내보냅니다(읽기 전용, 초대 키가 있어야 읽을 수 있어요).</p>`}
@@ -1370,6 +1374,9 @@ function openTeamPanel(fresh) {
   modalBox.querySelectorAll('[data-knock]').forEach((b) => { b.onclick = () => act('knock', { url: b.dataset.knock }) })
   modalBox.querySelectorAll('[data-allow]').forEach((b) => { b.onclick = () => act('knockAllow', { id: b.dataset.allow, allow: true }) })
   modalBox.querySelectorAll('[data-deny]').forEach((b) => { b.onclick = () => act('knockAllow', { id: b.dataset.deny, allow: false }) })
+  // 이름은 칸에서 나가거나 Enter 를 치면 바로 저장된다(전에는 "공유 켜기"를 누를 때만 보내서 켜진 뒤에는 못 바꿨다)
+  q('#tName').onchange = () => { const name = q('#tName').value.trim(); if (name && name !== (s.name || '')) act('shareRename', { name }) }
+  q('#tName').onkeydown = (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); q('#tName').blur() } }
   if (q('#tOn')) q('#tOn').onclick = () => act('shareOn', { name: q('#tName').value })
   if (q('#tOff')) q('#tOff').onclick = () => act('shareOff', {})
   if (q('#tNewKey')) q('#tNewKey').onclick = () => ask('초대 키를 새로 만들까요?', '지금 키로 등록한 동료들은 새 키로 다시 등록해야 해요.', '새로 만들기').then((ok) => ok && act('shareNewKey', {}))

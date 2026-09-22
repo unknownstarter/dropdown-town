@@ -723,6 +723,15 @@ Object.assign(ACTIONS, {
     await new Promise((r) => setTimeout(r, 300))
     return shareServer ? { ok: true, output: `공유를 켰어요. 근처 동료의 앱에 '${config.share.name}' 으로 보여요` } : { ok: false, output: shareError || '공유 서버를 열지 못했어요' }
   },
+  // 이름 바꾸기: 공유가 켜져 있으면 광고도 새 이름으로 다시 낸다.
+  shareRename: async ({ name }) => {
+    const next = String(name || '').trim().slice(0, 24)
+    if (!next) return null
+    config.share.name = next
+    await saveConfig()
+    if (config.share.enabled) { stopAdvertise(); startAdvertise() }
+    return { ok: true, output: `이름을 ‘${next}’ 으로 바꿨어요` }
+  },
   shareOff: async () => { config.share.enabled = false; stopShare(); stopAdvertise(); await saveConfig(); return { ok: true, output: '공유를 껐어요' } },
   // 근처 사무실에 노크: 내 이름과 번호, 그리고 내가 공유 중이면 내 주소와 키도 함께 보내 상대가 나를 바로 붙일 수 있게 한다.
   knock: async ({ url }) => {
