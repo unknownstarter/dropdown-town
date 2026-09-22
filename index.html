@@ -956,7 +956,7 @@ function renderRoster(force) {
 /* ---------- 세션 제어 ---------- */
 // 서버가 화면에 심어 준 토큰. 세션을 바꾸는 요청에는 이 값이 있어야 한다.
 const TOKEN = '__TOWN_TOKEN__'
-let knownDirs = []
+let knownDirs = [], recentDirs = [], HOME = ''
 async function act(name, body) {
   try {
     const res = await fetch('/api/action/' + name, { method: 'POST', headers: { 'content-type': 'application/json', 'x-town-token': TOKEN }, body: JSON.stringify(body) })
@@ -985,18 +985,35 @@ async function doAct(name, e) {
   if (name === 'remove' && await ask('세션을 지울까요?', `‘${label}’ 의 대화 기록을 지웁니다. 되돌릴 수 없어요. push 하지 않은 커밋이 있는 워크트리는 지워지지 않고 안내가 나옵니다.`, '지우기')) { if (await act('remove', { id: s.id })) closePanel() }
 }
 document.getElementById('rosterBtn').onclick = () => (rosterOpen && !rosterPick ? closePanel() : openRoster())
+// 프로젝트 고르기: 최근에 세션이 돌았던 폴더를 위에, 같은 맥의 다른 프로젝트 폴더를 아래에 두고, 맨 끝의 "직접 입력"을 고르면 경로를 적는 칸이 나온다.
+function dirPickerHtml() {
+  const recent = new Set(recentDirs), label = (d) => `${esc(d.split('/').pop())} (${esc(d.replace(/^\/Users\/[^/]+/, '~'))})`
+  const opt = (d) => `<option value="${esc(d)}">${label(d)}</option>`
+  return `<label>어느 프로젝트에서</label><select id="mDir">
+      ${recentDirs.length ? `<optgroup label="최근에 세션이 돌았던 곳">${recentDirs.map(opt).join('')}</optgroup>` : ''}
+      ${knownDirs.filter((d) => !recent.has(d)).length ? `<optgroup label="이 맥의 다른 프로젝트">${knownDirs.filter((d) => !recent.has(d)).map(opt).join('')}</optgroup>` : ''}
+      <option value="__custom__">직접 입력…</option>
+    </select>
+    <input type="text" id="mDirCustom" placeholder="예: ~/Documents/GitHub/my-project" style="display:none;margin-top:6px;width:100%;font:inherit;color:var(--ink);background:var(--bg);border:2px solid var(--line);border-radius:4px;padding:6px">`
+}
+function bindDirPicker() {
+  const sel = modalBox.querySelector('#mDir'), custom = modalBox.querySelector('#mDirCustom')
+  sel.onchange = () => { custom.style.display = sel.value === '__custom__' ? 'block' : 'none'; if (sel.value === '__custom__') custom.focus() }
+}
+const pickedDir = () => { const sel = modalBox.querySelector('#mDir'); return sel.value === '__custom__' ? modalBox.querySelector('#mDirCustom').value.trim().replace(/^~(?=\/|$)/, HOME) : sel.value }
 document.getElementById('newBtn').onclick = () => {
-  if (!knownDirs.length) return toast('아직 세션이 돌았던 프로젝트 폴더가 없어요. 터미널에서 claude --bg 로 한 번 시작해 주세요.')
   modalBox.innerHTML = `<h2>새 세션 시작</h2>
-    <label>어느 프로젝트에서</label><select id="mDir">${knownDirs.map((d) => `<option value="${esc(d)}">${esc(d.split('/').pop())} (${esc(d)})</option>`).join('')}</select>
+    ${dirPickerHtml()}
     <label>시킬 일</label><textarea id="mPrompt" placeholder="예: README 오타를 찾아서 고쳐줘"></textarea>
     <p class="hint">백그라운드 세션(claude --bg)으로 시작합니다. 권한 모드는 Claude Code 설정을 따릅니다.</p>
     <div class="row"><button id="mNo">취소</button><button id="mYes" class="primary">시작</button></div>`
   modal.style.display = 'flex'
+  bindDirPicker()
   modalBox.querySelector('#mPrompt').focus()
   modalBox.querySelector('#mNo').onclick = closeModal
   modalBox.querySelector('#mYes').onclick = async () => {
-    const cwd = modalBox.querySelector('#mDir').value, prompt = modalBox.querySelector('#mPrompt').value.trim()
+    const cwd = pickedDir(), prompt = modalBox.querySelector('#mPrompt').value.trim()
+    if (!cwd) return toast('프로젝트 폴더를 골라 주세요')
     if (!prompt) return toast('시킬 일을 적어 주세요')
     closeModal(); await act('start', { cwd, prompt })
   }
@@ -1067,24 +1084,25 @@ function openRelayPanel() {
   }
 }
 document.getElementById('relayBtn').onclick = () => {
-  if (!knownDirs.length) return toast('아직 세션이 돌았던 프로젝트 폴더가 없어요.')
   if (relayState && RELAY_ACTIVE.includes(relayState.status)) return openRelayPanel() // 이미 돌고 있으면 관리 창을 연다
   const hints = ['예: 이 프로젝트의 README 를 읽고 부족한 설명 3가지를 골라 주세요', '예: 앞 단계가 고른 3가지를 README 에 반영해 주세요', '예: 바뀐 README 를 검토하고 어색한 문장을 고쳐 주세요', '']
   modalBox.innerHTML = `<h2>릴레이 시작</h2>
     <p>단계마다 새 세션이 열리고, 앞 단계의 마지막 말이 다음 단계로 넘어갑니다. 지시문에 <code>{{prev}}</code> 를 쓰면 그 자리에 들어가고, 없으면 끝에 붙습니다. 어느 단계가 답을 기다리면 호출 벨로 나오고, 언제든 멈출 수 있어요.</p>
-    <label>어느 프로젝트에서</label><select id="mDir">${knownDirs.map((d) => `<option value="${esc(d)}">${esc(d.split('/').pop())} (${esc(d)})</option>`).join('')}</select>
+    ${dirPickerHtml()}
     <label>릴레이 이름</label><input type="text" id="mName" maxlength="24" placeholder="예: 기획에서 리뷰까지" style="width:100%;font:inherit;color:var(--ink);background:var(--bg);border:2px solid var(--line);border-radius:4px;padding:6px">
     ${[1, 2, 3, 4].map((n) => `<label>${n}단계 지시문${n > 1 ? ' (비우면 여기서 끝)' : ''}</label><textarea id="mStep${n}" style="height:64px" placeholder="${hints[n - 1]}"></textarea>`).join('')}
     <label style="display:flex;gap:8px;align-items:center;color:var(--ink)"><input type="checkbox" id="mReview"> 단계마다 내가 결과를 확인하고 넘기기</label>
     <p class="hint">단계마다 세션 하나가 새로 열리므로 토큰이 그만큼 듭니다. 권한 모드는 Claude Code 설정을 따릅니다. 시작한 뒤에도 위쪽 릴레이 표시를 누르면 남은 단계를 고치거나 다음 단계 전에 멈출 수 있어요.</p>
     <div class="row"><button id="mNo">취소</button><button id="mYes" class="primary">시작</button></div>`
   modal.style.display = 'flex'
+  bindDirPicker()
   modalBox.querySelector('#mStep1').focus()
   modalBox.querySelector('#mNo').onclick = closeModal
   modalBox.querySelector('#mYes').onclick = async () => {
     const steps = [1, 2, 3, 4].map((n) => modalBox.querySelector('#mStep' + n).value.trim()).filter(Boolean)
     if (!steps.length) return toast('1단계 지시문을 적어 주세요')
-    const cwd = modalBox.querySelector('#mDir').value, name = modalBox.querySelector('#mName').value.trim() || '릴레이'
+    const cwd = pickedDir(), name = modalBox.querySelector('#mName').value.trim() || '릴레이'
+    if (!cwd) return toast('프로젝트 폴더를 골라 주세요')
     const review = modalBox.querySelector('#mReview').checked
     closeModal(); await act('relayStart', { cwd, name, steps, review })
   }
@@ -1214,7 +1232,7 @@ async function poll() {
   try {
     const res = await fetch('/api/sessions', { cache: 'no-store' })
     const data = await res.json()
-    knownDirs = data.dirs || []
+    knownDirs = data.dirs || []; recentDirs = data.recentDirs || []; HOME = data.home || ''
     setRelay(data.relay || null)
     setAgents(data.agents || [])
     sync(data.sessions)

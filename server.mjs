@@ -2,7 +2,7 @@
 // Dropdown Town: ~/.claude 의 세션 상태를 읽어 픽셀 사무실로 보여주는 로컬 서버.
 // 의존성 없음. 127.0.0.1 에만 열린다. ~/.claude 는 읽기만 하고, 세션 제어는 공식 claude 명령만 부른다.
 import http from 'node:http'
-import { readFile, readdir, stat, open } from 'node:fs/promises'
+import { readFile, readdir, stat, open, realpath } from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -189,6 +189,34 @@ function placeOf(cwd = '') {
 
 // 세션 제어가 확인에 쓰는 장부: 새 세션을 열 수 있는 폴더(세션이 돌았던 프로젝트만)와 세션별 최신 상태.
 const knownDirs = new Set()
+
+// 새 세션이나 릴레이를 열 수 있는 폴더. 세션이 돌았던 프로젝트 말고도 같은 맥의 다른 프로젝트를 고를 수 있게,
+// 흔한 프로젝트 폴더 모음(~/Documents/GitHub, ~/Projects 등) 바로 아래의 폴더를 후보로 올린다. 60초마다 다시 훑는다.
+const PROJECT_ROOTS = ['Documents/GitHub', 'Documents/Projects', 'Projects', 'projects', 'dev', 'src', 'code', 'workspace', 'repos', 'git'].map((d) => path.join(os.homedir(), d))
+let dirCache = { at: 0, value: [] }
+async function projectDirs() {
+  if (Date.now() - dirCache.at < 60000) return dirCache.value
+  const found = new Set(knownDirs)
+  for (const root of PROJECT_ROOTS) {
+    for (const name of await readdir(root).catch(() => [])) {
+      if (name.startsWith('.') || name === 'node_modules') continue
+      const full = path.join(root, name)
+      if ((await stat(full).catch(() => null))?.isDirectory()) found.add(full)
+    }
+  }
+  dirCache = { at: Date.now(), value: [...found].sort() }
+  return dirCache.value
+}
+// 직접 적어 넣은 폴더도 받되, 실제로 있는 폴더이고 홈 폴더 아래여야 한다(심볼릭 링크로 밖을 가리키는 것도 막는다).
+async function allowedDir(cwd) {
+  if (typeof cwd !== 'string' || !cwd || cwd.includes('\0')) return null
+  try {
+    const real = await realpath(cwd)
+    if (!(await stat(real)).isDirectory()) return null
+    const home = await realpath(os.homedir())
+    return real === home || real.startsWith(home + path.sep) ? real : null
+  } catch { return null }
+}
 const jobStates = new Map()
 
 /* ---------- 직원 명부: 직군 에이전트 정의와 지금까지의 활동 ---------- */
@@ -326,7 +354,7 @@ async function collect() {
   }
   const sessionNames = new Map(jobs.map((j) => [j.sessionId, j.name || j.daemonShort]))
   const workingIds = new Set(jobs.filter((j) => j.state === 'working').map((j) => j.sessionId))
-  return { now: Date.now(), sessions: out, dirs: [...knownDirs].sort(), agents: await roster(sessionNames, workingIds), relay: relayPublic() }
+  return { now: Date.now(), sessions: out, dirs: await projectDirs(), recentDirs: [...knownDirs].sort(), home: os.homedir(), agents: await roster(sessionNames, workingIds), relay: relayPublic() }
 }
 
 /* ---------- 세션 제어 ---------- */
@@ -402,14 +430,20 @@ const ACTIONS = {
   // 휴게실의 끝났거나 멈춘 세션을 지운다. push 안 된 커밋이 있는 워크트리는 claude rm 이 스스로 거부한다.
   remove: ({ id }) => (hasState(id, ['done', 'stopped']) ? run(claudeBin, ['rm', id]) : null),
   // 새 백그라운드 세션. 폴더는 이미 세션이 돌았던 프로젝트 중에서만 고른다.
-  start: ({ cwd, prompt }) => (knownDirs.has(cwd) && typeof prompt === 'string' && prompt.trim() ? run(claudeBin, ['--bg', prompt.trim().slice(0, 4000)], { cwd, timeout: 180000 }) : null),
+  start: async ({ cwd, prompt }) => {
+    const dir = await allowedDir(cwd)
+    if (!dir || typeof prompt !== 'string' || !prompt.trim()) return null
+    knownDirs.add(dir)
+    return run(claudeBin, ['--bg', prompt.trim().slice(0, 4000)], { cwd: dir, timeout: 180000 })
+  },
   // 터미널 앱에서 그 세션을 연다. 권한 요청에 대한 수락과 거절은 거기서 직접 한다.
   // 릴레이 시작: 프로젝트 하나, 단계 지시문 1~4개. 앞 단계 결과는 {{prev}} 자리에, 없으면 지시문 끝에 붙는다.
   relayStart: async ({ cwd, name, steps, review }) => {
     if (relay && ACTIVE.includes(relay.status)) return { ok: false, output: '이미 도는 릴레이가 있어요. 먼저 멈춰 주세요.' }
-    const list = cleanSteps(steps)
-    if (!knownDirs.has(cwd) || !list.length) return null
-    relay = { name: String(name || '릴레이').slice(0, 24), cwd, steps: list, current: 0, jobs: [], results: [], status: 'starting', log: ['1단계를 시작하는 중'], startedAt: Date.now(), review: Boolean(review), pauseNext: false }
+    const list = cleanSteps(steps), dir = await allowedDir(cwd)
+    if (!dir || !list.length) return null
+    knownDirs.add(dir)
+    relay = { name: String(name || '릴레이').slice(0, 24), cwd: dir, steps: list, current: 0, jobs: [], results: [], status: 'starting', log: ['1단계를 시작하는 중'], startedAt: Date.now(), review: Boolean(review), pauseNext: false }
     relayLaunch() // 세션이 뜨는 데 시간이 걸리므로 기다리지 않고 답한다. 진행은 위쪽 표시에서 보인다.
     return { ok: true, output: '릴레이를 시작했어요. 1단계 세션이 뜨는 중이에요.' }
   },
