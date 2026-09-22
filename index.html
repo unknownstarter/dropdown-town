@@ -12,6 +12,9 @@
     font-family: Galmuri11, ui-monospace, 'Apple SD Gothic Neo', monospace; font-size:13px; }
   header { height:52px; display:flex; align-items:center; gap:8px; padding:0 14px; border-bottom:2px solid var(--line); }
   header button, .chip { white-space:nowrap; }
+  #rooms { display:flex; gap:4px; }
+  .room { padding:3px 8px; border-color:var(--line); color:var(--dim); } .room.on { border-color:var(--work); color:var(--ink); } .room.off { opacity:.6; }
+  .room b { font-weight:normal; color:var(--help); }
   h1 { font-size:16px; margin:0; letter-spacing:1px; }
   h1 span { color:var(--work); }
   .chip { padding:3px 9px; border:2px solid var(--line); border-radius:4px; background:var(--panel); white-space:nowrap; }
@@ -114,12 +117,14 @@
 <body>
 <header>
   <h1><span>*</span> Dropdown Town</h1>
+  <div id="rooms"></div>
   <div class="chip work">일하는 중 <b id="nWork">0</b></div>
   <div class="chip help"><span id="ownerChip">마스터 기다리는 중</span> <b id="nHelp">0</b></div>
   <div class="chip rest">쉬는 중 <b id="nRest">0</b></div>
   <div class="grow"></div>
   <span id="clock"></span>
   <span class="chip" id="relayChip" style="display:none"><b id="relayText"></b> <button id="relayStop" class="danger" style="padding:0 6px;margin-left:6px">멈춤</button></span>
+  <button id="teamBtn">팀</button>
   <button id="relayBtn">릴레이</button>
   <button id="rosterBtn">직원 명부</button>
   <button id="newBtn">+ 새 세션</button>
@@ -770,6 +775,7 @@ function askBlock(e) {
 function actsBlock(e) {
   const s = e.data
   if (s.kind !== 'bg') return ''
+  if (room > 0) return '<p class="hint">동료의 사무실은 구경만 할 수 있어요. 세션을 멈추거나 새로 여는 것은 그 맥에서만 됩니다.</p>'
   const cmds = [['이어서 보기', `claude attach ${s.id}`], ['최근 출력', `claude logs ${s.id}`], ['멈추기', `claude stop ${s.id}`], ['지우기', `claude rm ${s.id}`]]
   return `<h3>세션 다루기</h3><div class="acts">
       <button class="primary" data-act="attach">${e.zone === 'help' ? '터미널에서 열어 답하기' : '터미널에서 열기'}</button>
@@ -916,6 +922,7 @@ function stepAvatar(me, dt) {
     me.spot = { x: me.x, y: me.y, face: me.dir, room: me.y > 190 ? 'lounge' : 'work' }
   }
   if ((me.moving || me.path.length) && compact) focusOn(me, 2500)
+  if (rooms.length > 1 && me.y < 60 && me.x > 322 && me.x < 362 && performance.now() - lastRoomSwitch > 1500) { me.y = 68; me.path = []; switchRoom((room + 1) % rooms.length) } // 문으로 나가면 옆 방으로
   if (me.moving || me.path.length) me.dirty = true
   else if (me.dirty) { me.dirty = false; try { localStorage.setItem('town.me.pos', JSON.stringify({ x: Math.round(me.x), y: Math.round(me.y) })) } catch {} }
   // 가까운 캐릭터: 이름표를 켜고 Enter 로 열 수 있게 한다
@@ -1095,6 +1102,7 @@ function bindDirPicker() {
 }
 const pickedDir = () => { const sel = modalBox.querySelector('#mDir'); return sel.value === '__custom__' ? modalBox.querySelector('#mDirCustom').value.trim().replace(/^~(?=\/|$)/, HOME) : sel.value }
 document.getElementById('newBtn').onclick = () => {
+  if (room > 0) return toast('동료의 사무실에서는 새 세션을 열 수 없어요. 내 사무실 탭으로 돌아가 주세요.')
   modalBox.innerHTML = `<h2>새 세션 시작</h2>
     ${dirPickerHtml()}
     <label>시킬 일</label><textarea id="mPrompt" placeholder="예: README 오타를 찾아서 고쳐줘"></textarea>
@@ -1177,6 +1185,7 @@ function openRelayPanel() {
   }
 }
 document.getElementById('relayBtn').onclick = () => {
+  if (room > 0) return toast('릴레이는 내 사무실에서만 시작할 수 있어요.')
   if (relayState && RELAY_ACTIVE.includes(relayState.status)) return openRelayPanel() // 이미 돌고 있으면 관리 창을 연다
   const hints = ['예: 이 프로젝트의 README 를 읽고 부족한 설명 3가지를 골라 주세요', '예: 앞 단계가 고른 3가지를 README 에 반영해 주세요', '예: 바뀐 README 를 검토하고 어색한 문장을 고쳐 주세요', '']
   modalBox.innerHTML = `<h2>릴레이 시작</h2>
@@ -1198,6 +1207,76 @@ document.getElementById('relayBtn').onclick = () => {
     if (!cwd) return toast('프로젝트 폴더를 골라 주세요')
     const review = modalBox.querySelector('#mReview').checked
     closeModal(); await act('relayStart', { cwd, name, steps, review })
+  }
+}
+
+/* ---------- 팀: 방(사무실) 여러 개 ---------- */
+// 0번 방은 내 사무실, 그다음은 등록한 동료들의 사무실이다. 탭이나 문으로 오가며, 동료 방은 구경만 한다.
+let rooms = [], room = 0, teamState = { share: {}, peers: [] }, lastRoomSwitch = 0
+function setRooms(team, mySessions, myAgents, myRelay) {
+  teamState = team
+  rooms = [{ id: 'me', name: '내 사무실', ok: true, sessions: mySessions, agents: myAgents, relay: myRelay }, ...(team.peers || []).map((p) => ({ id: p.url, name: p.name || p.url, ok: p.ok, error: p.error, sessions: p.sessions || [], agents: p.agents || [], relay: p.relay || null }))]
+  if (room >= rooms.length) room = 0
+  const cur = rooms[room]
+  renderRooms()
+  setRelay(room === 0 ? myRelay : cur.relay)
+  setAgents(room === 0 ? myAgents : cur.agents)
+  sync(cur.ok ? cur.sessions : [])
+  if (modal.dataset.kind === 'team' && modal.style.display === 'flex') openTeamPanel(false)
+}
+function renderRooms() {
+  const el = document.getElementById('rooms')
+  const key = JSON.stringify([room, rooms.map((r) => [r.name, r.ok, r.sessions.filter((s) => s.state === 'blocked').length])])
+  if (el.dataset.key === key) return
+  el.dataset.key = key
+  el.innerHTML = rooms.length > 1 ? rooms.map((r, i) => { const help = r.sessions.filter((s) => s.state === 'blocked').length; return `<button class="room${i === room ? ' on' : ''}${r.ok ? '' : ' off'}" data-i="${i}" title="${esc(r.error || '')}">${esc(r.name)}${help ? ` <b>${help}</b>` : ''}${r.ok ? '' : ' 💤'}</button>` }).join('') : ''
+  el.querySelectorAll('.room').forEach((b) => { b.onclick = () => switchRoom(Number(b.dataset.i)) })
+}
+function switchRoom(i) {
+  if (i === room || !rooms[i]) return
+  lastRoomSwitch = performance.now()
+  closePanel()
+  for (const e of ents.values()) if (e.id !== ME) { e.tag.remove(); e.bubble.remove(); ents.delete(e.id) } // 방을 바꾸면 그 방 사람들을 처음부터 그린다
+  for (const k in slots) slots[k] = []
+  planes.length = 0; talkLinks.clear(); lastSeenMsg.clear()
+  room = i; firstLoad = true
+  const cur = rooms[room]
+  renderRooms()
+  setRelay(room === 0 ? rooms[0].relay : cur.relay)
+  setAgents(room === 0 ? rooms[0].agents : cur.agents)
+  sync(cur.ok ? cur.sessions : [])
+  toast(room === 0 ? '내 사무실로 돌아왔어요' : cur.ok ? `‘${cur.name}’ 의 사무실이에요 (구경만 할 수 있어요)` : `‘${cur.name}’ 의 맥에 연결되지 않아요: ${cur.error || ''}`)
+}
+document.getElementById('teamBtn').onclick = () => openTeamPanel(true)
+function openTeamPanel(fresh) {
+  const t = teamState, s = t.share || {}, addr = (s.addresses || [])[0]
+  const draftName = fresh ? null : modalBox.querySelector('#tName')?.value, draftUrl = fresh ? null : modalBox.querySelector('#pUrl')?.value, draftKey = fresh ? null : modalBox.querySelector('#pKey')?.value, draftPeerName = fresh ? null : modalBox.querySelector('#pName')?.value
+  modal.dataset.kind = 'team'
+  modalBox.innerHTML = `<h2>팀: 사무실 서로 구경하기</h2>
+    <p>같은 와이파이(또는 Tailscale 같은 사설망)에 있는 동료의 맥과 사무실을 서로 구경할 수 있어요. 구경만 되고, 세션을 멈추거나 새로 여는 것은 각자 자기 맥에서만 됩니다.</p>
+    <h3 style="margin:14px 0 6px">1. 내 사무실 공유</h3>
+    <label>내 이름 (동료 화면의 탭에 보여요)</label><input type="text" id="tName" maxlength="24" value="${esc(draftName ?? s.name ?? '')}" style="width:100%;font:inherit;color:var(--ink);background:var(--bg);border:2px solid var(--line);border-radius:4px;padding:6px">
+    ${s.enabled ? `<div class="ask" style="margin-top:8px">초대 주소: <code>http://${esc(addr || '이 맥의 IP')}:${s.port}</code><br>초대 키: <code>${esc(s.key || '')}</code><br><small style="color:var(--dim)">동료가 자기 앱의 팀 창에서 이 둘을 넣으면 내 사무실이 보여요. 키는 비밀번호처럼 다뤄 주세요.${(s.addresses || []).length > 1 ? ' 다른 주소: ' + esc(s.addresses.slice(1).join(', ')) : ''}${s.listening ? '' : ' <b style="color:var(--help)">지금 공유 서버가 떠 있지 않아요' + (s.error ? ': ' + esc(s.error) : '') + '</b>'}</small></div>
+      <div class="acts" style="margin-top:8px"><button data-copy="http://${esc(addr || '')}:${s.port}">주소 복사</button><button data-copy="${esc(s.key || '')}">키 복사</button><button id="tNewKey">키 새로 만들기</button><button id="tOff" class="danger">공유 끄기</button></div>`
+      : `<div class="acts" style="margin-top:8px"><button id="tOn" class="primary">공유 켜기</button></div><p class="hint">켜면 이 맥의 ${s.port || 4778}번 포트로 세션 정보를 내보냅니다(읽기 전용, 초대 키가 있어야 읽을 수 있어요).</p>`}
+    <h3 style="margin:16px 0 6px">2. 동료의 사무실 붙이기</h3>
+    ${(t.peers || []).length ? `<div class="cmds">${t.peers.map((p) => `<div><span>${esc(p.name || '')}</span><code>${esc(p.url)}</code><button data-remove="${esc(p.url)}" class="danger">빼기</button></div>`).join('')}</div>` : '<p class="hint">아직 붙인 동료가 없어요.</p>'}
+    <label>동료의 초대 주소</label><input type="text" id="pUrl" placeholder="예: http://192.168.0.12:4778" value="${esc(draftUrl ?? '')}" style="width:100%;font:inherit;color:var(--ink);background:var(--bg);border:2px solid var(--line);border-radius:4px;padding:6px">
+    <label>동료의 초대 키</label><input type="text" id="pKey" placeholder="동료가 알려준 키" value="${esc(draftKey ?? '')}" style="width:100%;font:inherit;color:var(--ink);background:var(--bg);border:2px solid var(--line);border-radius:4px;padding:6px">
+    <label>탭에 보일 이름 (비우면 동료가 정한 이름)</label><input type="text" id="pName" maxlength="24" value="${esc(draftPeerName ?? '')}" style="width:100%;font:inherit;color:var(--ink);background:var(--bg);border:2px solid var(--line);border-radius:4px;padding:6px">
+    <div class="row"><button id="tClose">닫기</button><button id="pAdd" class="primary">동료 붙이기</button></div>`
+  modal.style.display = 'flex'
+  const q = (sel) => modalBox.querySelector(sel)
+  q('#tClose').onclick = () => { closeModal(); delete modal.dataset.kind }
+  modalBox.querySelectorAll('[data-copy]').forEach((b) => { b.onclick = () => copyText(b.dataset.copy, b) })
+  modalBox.querySelectorAll('[data-remove]').forEach((b) => { b.onclick = () => ask('동료를 뺄까요?', `‘${b.dataset.remove}’ 의 사무실을 더 이상 보지 않아요.`, '빼기').then((ok) => ok && act('peerRemove', { url: b.dataset.remove })) })
+  if (q('#tOn')) q('#tOn').onclick = () => act('shareOn', { name: q('#tName').value })
+  if (q('#tOff')) q('#tOff').onclick = () => act('shareOff', {})
+  if (q('#tNewKey')) q('#tNewKey').onclick = () => ask('초대 키를 새로 만들까요?', '지금 키로 등록한 동료들은 새 키로 다시 등록해야 해요.', '새로 만들기').then((ok) => ok && act('shareNewKey', {}))
+  q('#pAdd').onclick = async () => {
+    const url = q('#pUrl').value.trim(), key = q('#pKey').value.trim(), name = q('#pName').value.trim()
+    if (!url || !key) return toast('초대 주소와 키를 둘 다 넣어 주세요')
+    if (await act('peerAdd', { url, key, name })) { q('#pUrl').value = ''; q('#pKey').value = ''; q('#pName').value = '' }
   }
 }
 
@@ -1321,14 +1400,12 @@ async function poll() {
     if (sec < lastStorySec) { for (const e of ents.values()) { e.tag.remove(); e.bubble.remove() } ents.clear(); for (const k in slots) slots[k] = []; firstLoad = true }
     lastStorySec = sec; setAgents(demoAgents()); return sync(demoStory(sec))
   }
-  if (DEMO) { setAgents(demoAgents()); return sync(demoSessions()) }
+  if (DEMO) { setRooms({ share: { enabled: true, name: '나', port: 4778, key: 'demo', addresses: ['192.168.0.10'], listening: true }, peers: [{ url: 'http://192.168.0.11:4778', name: '철수', ok: true, sessions: demoSessions().slice(2, 9).map((s) => ({ ...s, id: 'p' + s.id, name: s.name.replace('demo', '철수') })), agents: [], relay: null }, { url: 'http://192.168.0.12:4778', name: '영희', ok: false, error: '응답이 없어요 (맥이 잠들었거나 꺼져 있을 수 있어요)' }] }, demoSessions(), demoAgents(), null); return }
   try {
     const res = await fetch('/api/sessions', { cache: 'no-store' })
     const data = await res.json()
     knownDirs = data.dirs || []; recentDirs = data.recentDirs || []; HOME = data.home || ''
-    setRelay(data.relay || null)
-    setAgents(data.agents || [])
-    sync(data.sessions)
+    setRooms(data.team || { share: {}, peers: [] }, data.sessions, data.agents || [], data.relay || null)
     document.getElementById('offline').style.display = 'none'
   } catch { document.getElementById('offline').style.display = 'block' }
 }

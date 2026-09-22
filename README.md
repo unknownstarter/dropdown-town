@@ -108,6 +108,7 @@ claude --bg "이 폴더에 뭐가 있는지 요약해줘"
 | 릴레이 중간에 끼어들기 | 위쪽 릴레이 표시를 누르면 관리 창이 열립니다. 아직 시작하지 않은 단계의 지시문을 고치거나 줄일 수 있고, "이 단계 끝나면 멈추기"를 누르면 다음 단계 전에 멈춥니다. 시작할 때 "단계마다 내가 확인하고 넘기기"를 켜 두면 매 단계 끝에 멈춰서, 다음 단계로 넘길 결과를 직접 고친 뒤 넘길 수 있습니다. |
 | 세션끼리 주고받는 대화 보기 | 세션이 다른 세션이나 조수와 메시지를 주고받으면 종이비행기가 날아가고, 세션 사이에는 잠시 점선이 이어집니다. 캐릭터를 누르면 "최근 대화"에 주고받은 내용이 나옵니다. |
 | 캐릭터 꾸미기 | 캐릭터를 누르면 아래쪽에 별명, 몸, 머리, 옷, 장식(왕관, 고양이 귀, 리본)과 장식 색을 바꾸는 칸이 있습니다. |
+| 팀원의 사무실 구경하기 | 오른쪽 위 "팀". 내 맥에서 "공유 켜기"를 하면 초대 주소와 키가 생기고, 동료가 자기 앱의 팀 창에 그 둘을 넣으면 내 사무실이 동료 화면에 방 탭으로 붙습니다(반대도 같습니다). 같은 와이파이면 바로 되고, 밖에서는 Tailscale 같은 개인 사설망이 필요합니다. 동료 방은 구경만 되고 세션 조작은 각자 자기 맥에서만 됩니다. 아바타가 문으로 걸어 나가면 옆 방으로 넘어갑니다. 설정은 `~/.dropdown-town/config.json` 에 저장됩니다. |
 | 내 캐릭터로 사무실 돌아다니기 | 별(★) 명찰을 단 캐릭터가 나입니다. 방향키나 WASD 로 걷고, 빈 바닥을 누르거나(휴대폰에서는 두드리거나) 그리로 걸어갑니다. 세션 캐릭터 옆에 서면 이름표가 켜지고 Enter 나 스페이스로 정보가 열립니다. 위치와 꾸민 모습은 이 창에 저장됩니다. 세션 캐릭터는 위치가 곧 상태라서 손으로 옮길 수 없습니다. |
 | 화면 옆에 세로로 붙여 두기 | 메뉴 "보기"의 "화면 왼쪽 3분의 1에 붙이기"(⌘[)나 "오른쪽"(⌘]). 창이 좁아지면 사무실을 줄이지 않고 크게 보여주면서, 카메라가 사람이 있는 쪽을 천천히 오갑니다. 누가 호출 벨을 누르면 그쪽을 비추고, 그림을 끌거나 양옆 화살표를 눌러 직접 움직일 수도 있습니다. 아래에는 세션 카드 목록이 나옵니다. "항상 위에 두기"(⌘T)와 같이 쓰면 좋습니다. |
 | 코드 편집기 옆에 작게 띄우기 | 메뉴 "보기"의 "작은 창으로"(⌘1). |
@@ -133,6 +134,7 @@ claude --bg "이 폴더에 뭐가 있는지 요약해줘"
 - **내 컴퓨터 안에서만 돕니다.** 세션 정보는 밖으로 나가지 않습니다(글꼴만 인터넷에서 받습니다).
 - **파일은 읽기만 합니다.** Claude Code 가 남기는 세션 상태 파일(`~/.claude`)을 읽을 뿐 아무것도 쓰지 않습니다.
 - **세션 제어는 공식 명령만 부릅니다.** 멈추기, 지우기, 새 세션, 터미널에서 열기는 각각 `claude stop`, `claude rm`, `claude --bg`, `claude attach` 를 그대로 실행합니다. 멈추기와 지우기는 확인 창을 거칩니다.
+- **팀 공유는 켜야만 열리고, 읽기 전용입니다.** 공유를 켜면 별도 포트(4778)로 세션 정보를 내보내는데, 초대 키가 있어야 읽을 수 있고 제어 요청은 그 포트에 아예 없습니다. 초대 키는 비밀번호처럼 다루고, 인터넷에 직접 노출하지 말고 같은 와이파이나 사설망 안에서만 쓰세요.
 - **다른 웹페이지가 몰래 조작할 수 없습니다.** 제어 요청에는 앱이 켜질 때마다 새로 만드는 토큰이 필요하고, 세션 id 와 상태, 프로젝트 폴더를 서버가 다시 확인합니다.
 - 읽는 파일들은 Claude Code 의 공개 규격이 아닙니다. Claude Code 2.1.27x 에서 확인했고, 버전이 오르면 고쳐야 할 수 있습니다.
 
@@ -272,6 +274,7 @@ claude --bg "Summarize what is in this folder"
 | Step into a running relay | Click the relay chip at the top to open the relay panel. Edit or trim the steps that have not started yet, or ask it to pause before the next step. Start a relay with "단계마다 내가 확인하고 넘기기" checked and it pauses after every step so you can edit the hand-off text before it goes on. |
 | See sessions talking to each other | When a session exchanges messages with another session or a helper, a paper plane flies and a dotted line briefly links the two. Click a character to read the "최근 대화" list. |
 | Dress up a character | Click it and use the fields at the bottom of the panel. |
+| Visit a teammate's office | "팀" at the top right. Turn on sharing on your Mac to get an invite address and key; a teammate enters both in their own team dialog and your office appears as a room tab on their screen (and vice versa). Works directly on the same Wi-Fi, or over a private network such as Tailscale. Teammate rooms are view-only; sessions can only be controlled on their own Mac. Walk your avatar out the door to move to the next room. Settings live in `~/.dropdown-town/config.json`. |
 | Walk around as yourself | The character with the ★ tag is you. Move with the arrow keys or WASD, or click (tap on a phone) an empty spot on the floor to walk there. Stand next to a session character and press Enter or Space to open its panel. Your position and look are saved in this window. Session characters cannot be moved by hand, since their position is their status. |
 | Dock it to the side of your screen | View menu: snap to the left third (⌘[) or right third (⌘]). In a narrow window the office stays large and a camera slowly pans between the sides where characters are. It jumps to the bell when someone needs you, and you can drag the scene or use the side arrows. A list of session cards sits below. Works well with Always on top (⌘T). |
 | Keep it small beside your editor | View menu: Compact window (⌘1). |
@@ -294,6 +297,7 @@ claude --bg "Summarize what is in this folder"
 - **Local only.** No session data leaves your machine. Only the font is loaded from the internet.
 - **Files are read-only.** It reads the session state files Claude Code keeps under `~/.claude` and writes nothing there.
 - **Session control uses official commands only.** Stop, delete, new session and open-in-Terminal run `claude stop`, `claude rm`, `claude --bg` and `claude attach` as is. Stop and delete ask for confirmation first.
+- **Team sharing is opt-in and read-only.** Turning it on serves session data on a separate port (4778); it requires the invite key and exposes no control endpoints. Treat the key like a password and use it only on a trusted Wi-Fi or private network, never directly on the internet.
 - **Other web pages cannot control it.** Control requests need a token regenerated on every start, and the server re-checks the session id, its state and the project folder.
 - The files it reads are not a public Claude Code format. Verified on Claude Code 2.1.27x. A future version may require changes.
 
