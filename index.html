@@ -109,18 +109,17 @@
   #modal select, #modal textarea { width:100%; font:inherit; color:var(--ink); background:var(--bg); border:2px solid var(--line); border-radius:4px; padding:6px; }
   #modal textarea { height:110px; resize:vertical; }
   #modal .row { display:flex; justify-content:flex-end; gap:8px; margin-top:14px; }
-  /* 채팅은 사무실 그림 아래가 아니라 그림 위 왼쪽 아래에 겹쳐 고정한다. 창이 커져 그림이 세로를 다 채워도 늘 보인다.
-     평소엔 최근 두 줄만 작게 보이고, 입력 칸을 누르거나 마우스를 올리면 펼쳐진다. */
-  #chatbar { position:absolute; left:8px; bottom:8px; z-index:3; width:min(56%, 420px); min-width:230px; padding:6px; background:rgba(20,16,30,.72); border:2px solid var(--line); border-radius:6px; backdrop-filter:blur(2px); }
-  #chatbar:hover, #chatbar:focus-within { background:rgba(20,16,30,.92); }
-  #chatlog { display:flex; flex-direction:column; gap:2px; margin-bottom:4px; font-size:11px; color:var(--dim); line-height:1.4; max-height:32px; overflow:hidden; transition:max-height .15s; }
-  #chatbar:hover #chatlog, #chatbar:focus-within #chatlog { max-height:140px; overflow:auto; }
+  /* 채팅은 사무실 그림 바로 아래에 둔다(그림을 가리지 않게). 그림 크기를 정할 때 이 칸의 높이를 미리 빼 두므로 창이 커져도 밀려나지 않는다.
+     평소엔 최근 두 줄만 작게 보이고, 입력 칸을 누르거나 마우스를 올리면 펼쳐진다(펼쳐질 때는 위로 겹쳐 그림 크기는 그대로). */
+  #chatbar { position:relative; flex:none; width:calc(480px * var(--s) + 8px); max-width:100%; margin-top:6px; padding:4px 6px; background:var(--panel); border:2px solid var(--line); border-radius:6px; }
+  #chatlog { display:flex; flex-direction:column; gap:2px; margin-bottom:4px; font-size:11px; color:var(--dim); line-height:1.4; max-height:32px; overflow:hidden; }
   #chatlog:empty { display:none; }
+  #chatbar:hover #chatlog, #chatbar:focus-within #chatlog { position:absolute; left:0; right:0; bottom:100%; max-height:160px; overflow:auto; margin:0; padding:6px; background:var(--panel); border:2px solid var(--line); border-bottom:0; border-radius:6px 6px 0 0; z-index:4; }
   #chatlog b { font-weight:normal; color:var(--work); margin-right:4px; } #chatlog .mine b { color:var(--rest); }
-  #chatform { display:flex; gap:6px; } #chatform input { flex:1; min-width:0; font:inherit; font-size:12px; color:var(--ink); background:rgba(42,36,56,.9); border:2px solid var(--line); border-radius:4px; padding:3px 8px; }
+  #chatform { display:flex; gap:6px; } #chatform input { flex:1; min-width:0; font:inherit; font-size:12px; color:var(--ink); background:var(--bg); border:2px solid var(--line); border-radius:4px; padding:3px 8px; }
   #chatform input:focus { border-color:var(--work); outline:none; }
   #chatform button { padding:2px 8px; }
-  body.compact #chatbar { width:calc(100% - 16px); min-width:0; }
+  body.compact #chatbar { width:calc(100% - 4px); }
   .bubble.chat { background:#fff; border-color:#2a2233; max-width:calc(80px * var(--s)); } .bubble.chat span { -webkit-line-clamp:3; } body.compact .bubble.chat .d { display:inline; }
   #toasts { position:fixed; left:50%; bottom:18px; transform:translateX(-50%); display:flex; flex-direction:column; gap:6px; align-items:center; }
   .toast { background:#fffdf6; color:#2a2233; border:2px solid #2a2233; border-radius:6px; padding:6px 12px; }
@@ -144,8 +143,8 @@
   <button id="style">캐릭터: 도트</button>
   <button id="sound">알림음 꺼짐</button>
 </header>
-<main><div id="stage"><canvas id="cv" width="480" height="300"></canvas><div id="labels"></div><button class="pan l" id="panL" title="왼쪽 보기">‹</button><button class="pan r" id="panR" title="오른쪽 보기">›</button>
-<div id="chatbar"><div id="chatlog"></div><form id="chatform"><input id="chatin" maxlength="120" placeholder="같은 방 사람들에게 한마디 (Enter 나 / 키로 바로 입력)" autocomplete="off"><button type="submit">보내기</button></form></div></div>
+<main><div id="stage"><canvas id="cv" width="480" height="300"></canvas><div id="labels"></div><button class="pan l" id="panL" title="왼쪽 보기">‹</button><button class="pan r" id="panR" title="오른쪽 보기">›</button></div>
+<div id="chatbar"><div id="chatlog"></div><form id="chatform"><input id="chatin" maxlength="120" placeholder="같은 방 사람들에게 한마디 (Enter 나 / 키로 바로 입력)" autocomplete="off"><button type="submit">보내기</button></form></div>
 <div id="list"></div></main>
 <aside id="panel"></aside>
 <div id="toasts"></div>
@@ -1466,13 +1465,14 @@ function fit() {
   compact = innerWidth < 760
   document.body.classList.toggle('compact', compact)
   const headerH = document.querySelector('header').offsetHeight
+  const chatH = (document.getElementById('chatbar')?.offsetHeight || 40) + 6 // 그림 아래 채팅 칸 자리는 미리 빼 둔다
   if (compact) { // 세로 공간의 62% 까지 쓰면서 0.5 단위로 가장 큰 배율을 고르고, 너비는 들어오는 만큼만 비춘다(최소 250px 분량)
     const availW = innerWidth - 20
-    scale = Math.max(1, Math.min(3, Math.floor((((innerHeight - headerH) * 0.62) / H) * 2) / 2))
+    scale = Math.max(1, Math.min(3, Math.floor((((innerHeight - headerH - chatH) * 0.62) / H) * 2) / 2))
     while (scale > 1 && availW / scale < 250) scale -= 0.5
     view.w = Math.min(W, Math.floor(availW / scale))
   }
-  else { const aw = innerWidth - 40, ah = innerHeight - headerH - 36; scale = Math.max(1, Math.floor(Math.min(aw / W, ah / H) * 2) / 2); view.w = W }
+  else { const aw = innerWidth - 40, ah = innerHeight - headerH - chatH - 36; scale = Math.max(1, Math.floor(Math.min(aw / W, ah / H) * 2) / 2); view.w = W }
   if (was !== compact) renderList(true)
   document.documentElement.style.setProperty('--s', scale)
   document.body.classList.toggle('tiny', compact && scale < 1.5)
