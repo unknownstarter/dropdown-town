@@ -863,10 +863,18 @@ function renderSubPanel(e) {
   panel.style.display = 'block'
   panel.querySelector('.x').onclick = closePanel
 }
+// 복사: 앱 창(WKWebView)에서는 clipboard API 가 조용히 실패할 수 있어서, 보이지 않는 입력 칸을 선택해 복사하는 옛 방식을 먼저 쓴다.
 function copyText(text, btn) {
-  const label = btn.textContent, done = () => { btn.textContent = '복사됨'; setTimeout(() => { btn.textContent = label }, 1500) }
-  const fallback = () => { const ta = document.createElement('textarea'); ta.value = text; document.body.append(ta); ta.select(); document.execCommand('copy'); ta.remove(); done() }
-  if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, fallback); else fallback()
+  const label = btn.textContent, done = () => { btn.textContent = '복사됨'; setTimeout(() => { if (btn.isConnected) btn.textContent = label }, 1500) }
+  const failed = () => { toast('복사하지 못했어요. 글자를 드래그해서 직접 복사해 주세요.') }
+  let ok = false
+  try {
+    const ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', ''); ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none'
+    document.body.append(ta); ta.focus(); ta.select(); ta.setSelectionRange(0, text.length)
+    ok = document.execCommand('copy'); ta.remove(); btn.focus()
+  } catch { ok = false }
+  if (ok) return done()
+  if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, failed); else failed()
 }
 function closePanel() { const prev = ents.get(selected); selected = null; rosterOpen = false; panel.style.display = 'none'; if (prev) refreshLabels(prev); renderList(true) }
 
@@ -1215,7 +1223,7 @@ document.getElementById('relayBtn').onclick = () => {
 
 /* ---------- 팀: 방(사무실) 여러 개 ---------- */
 // 0번 방은 내 사무실, 그다음은 등록한 동료들의 사무실이다. 탭이나 문으로 오가며, 동료 방은 구경만 한다.
-let rooms = [], room = 0, teamState = { share: {}, peers: [] }, lastRoomSwitch = 0
+let rooms = [], room = 0, teamState = { share: {}, peers: [] }, lastRoomSwitch = 0, lastTeamKey = ''
 function setRooms(team, mySessions, myAgents, myRelay) {
   teamState = team
   rooms = [{ id: 'me', name: '내 사무실', ok: true, sessions: mySessions, agents: myAgents, relay: myRelay }, ...(team.peers || []).map((p) => ({ id: p.url, name: p.name || p.url, ok: p.ok, error: p.error, sessions: p.sessions || [], agents: p.agents || [], relay: p.relay || null, avatars: p.avatars || [] }))]
@@ -1226,7 +1234,11 @@ function setRooms(team, mySessions, myAgents, myRelay) {
   setAgents(room === 0 ? myAgents : cur.agents)
   sync(cur.ok ? cur.sessions : [])
   syncGuests(room === 0 ? team.visitors : cur.avatars)
-  if (modal.dataset.kind === 'team' && modal.style.display === 'flex') openTeamPanel(false)
+  // 열어 둔 팀 창은 공유 상태나 동료 목록이 실제로 바뀌었을 때만, 그것도 입력 중이 아닐 때만 다시 그린다.
+  // 매번 다시 그리면 입력 칸의 커서가 튕기고 복사 버튼이 눌리는 순간 바뀌어 버린다.
+  const teamKey = JSON.stringify([team.share, (team.peers || []).map((p) => [p.url, p.name, p.ok, p.error])])
+  const changed = teamKey !== lastTeamKey; lastTeamKey = teamKey
+  if (changed && modal.dataset.kind === 'team' && modal.style.display === 'flex' && !modalBox.contains(document.activeElement)) openTeamPanel(false)
 }
 function renderRooms() {
   const el = document.getElementById('rooms')
