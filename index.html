@@ -1262,7 +1262,8 @@ document.getElementById('relayBtn').onclick = () => {
 
 /* ---------- 팀: 방(사무실) 여러 개 ---------- */
 // 0번 방은 내 사무실, 그다음은 등록한 동료들의 사무실이다. 탭이나 문으로 오가며, 동료 방은 구경만 한다.
-let rooms = [], room = 0, teamState = { share: {}, peers: [] }, lastRoomSwitch = 0, lastTeamKey = ''
+let rooms = [], room = 0, teamState = { share: {}, peers: [] }, lastRoomSwitch = 0, lastTeamKey = '', prevKnockCheck = false
+const seenKnocks = new Set(), outKnockStatus = new Map()
 function setRooms(team, mySessions, myAgents, myRelay) {
   teamState = team; myUid = team.id || ''
   rooms = [{ id: 'me', name: '내 사무실', ok: true, sessions: mySessions, agents: myAgents, relay: myRelay }, ...(team.peers || []).map((p) => ({ id: p.url, name: p.name || p.url, ok: p.ok, error: p.error, sessions: p.sessions || [], agents: p.agents || [], relay: p.relay || null, avatars: p.avatars || [], chat: p.chat || [] }))]
@@ -1276,8 +1277,12 @@ function setRooms(team, mySessions, myAgents, myRelay) {
   syncChat(room === 0 ? team.chat : cur.chat)
   // 열어 둔 팀 창은 공유 상태나 동료 목록이 실제로 바뀌었을 때만, 그것도 입력 중이 아닐 때만 다시 그린다.
   // 매번 다시 그리면 입력 칸의 커서가 튕기고 복사 버튼이 눌리는 순간 바뀌어 버린다.
-  const teamKey = JSON.stringify([team.share, (team.peers || []).map((p) => [p.url, p.name, p.ok, p.error])])
+  const teamKey = JSON.stringify([team.share, (team.peers || []).map((p) => [p.url, p.name, p.ok, p.error]), team.nearby, team.knocks, team.outKnocks])
   const changed = teamKey !== lastTeamKey; lastTeamKey = teamKey
+  // 새 노크가 오면 알리고 팀 창을 연다. 내가 보낸 노크가 허용되면 알린다.
+  for (const k of team.knocks || []) if (!seenKnocks.has(k.id)) { seenKnocks.add(k.id); if (lastTeamKey && prevKnockCheck) { toast(`‘${k.name}’ 님이 내 사무실을 보고 싶어 해요. 팀 창에서 허용해 주세요`); beep(880); if (modal.style.display !== 'flex') openTeamPanel(true) } }
+  for (const k of team.outKnocks || []) { const prev = outKnockStatus.get(k.url); if (prev === 'pending' && k.status === 'allowed') { toast(`‘${k.name}’ 이(가) 허용했어요. 사무실이 붙었어요`); beep(659) } if (prev === 'pending' && k.status === 'denied') toast(`‘${k.name}’ 이(가) 거절했어요`); outKnockStatus.set(k.url, k.status) }
+  prevKnockCheck = true
   if (changed && modal.dataset.kind === 'team' && modal.style.display === 'flex' && !modalBox.contains(document.activeElement)) openTeamPanel(false)
 }
 function renderRooms() {
@@ -1344,17 +1349,27 @@ function openTeamPanel(fresh) {
     ${s.enabled ? `<div class="ask" style="margin-top:8px">초대 주소: <code>http://${esc(addr || '이 맥의 IP')}:${s.port}</code><br>초대 키: <code>${esc(s.key || '')}</code><br><small style="color:var(--dim)">동료가 자기 앱의 팀 창에서 이 둘을 넣으면 내 사무실이 보여요. 키는 비밀번호처럼 다뤄 주세요.${(s.addresses || []).length > 1 ? ' 다른 주소: ' + esc(s.addresses.slice(1).join(', ')) : ''}${s.listening ? '' : ' <b style="color:var(--help)">지금 공유 서버가 떠 있지 않아요' + (s.error ? ': ' + esc(s.error) : '') + '</b>'}</small></div>
       <div class="acts" style="margin-top:8px"><button data-copy="http://${esc(addr || '')}:${s.port}">주소 복사</button><button data-copy="${esc(s.key || '')}">키 복사</button><button id="tNewKey">키 새로 만들기</button><button id="tOff" class="danger">공유 끄기</button></div>`
       : `<div class="acts" style="margin-top:8px"><button id="tOn" class="primary">공유 켜기</button></div><p class="hint">켜면 이 맥의 ${s.port || 4778}번 포트로 세션 정보를 내보냅니다(읽기 전용, 초대 키가 있어야 읽을 수 있어요).</p>`}
-    <h3 style="margin:16px 0 6px">2. 동료의 사무실 붙이기</h3>
+    ${(t.knocks || []).length ? `<h3 style="margin:16px 0 6px">나에게 온 노크</h3>${t.knocks.map((k) => `<div class="acts" style="margin-bottom:6px;align-items:center"><span>‘${esc(k.name)}’ 님이 내 사무실을 보고 싶어 해요</span><button class="primary" data-allow="${esc(k.id)}">허용</button><button class="danger" data-deny="${esc(k.id)}">거절</button></div>`).join('')}` : ''}
+    <h3 style="margin:16px 0 6px">2. 근처 사무실 (같은 와이파이, 자동으로 찾아요)</h3>
+    ${(t.nearby || []).length ? `<div class="cmds">${t.nearby.map((n) => `<div><span>${esc(n.name)}</span><code>${esc(n.url.replace(/^http:\/\//, ''))}</code>${n.peer ? '<button disabled>붙어 있음</button>' : n.knock === 'pending' ? '<button disabled>허용 기다리는 중</button>' : `<button class="primary" data-knock="${esc(n.url)}">${n.knock === 'denied' ? '다시 노크' : '붙이기'}</button>`}</div>`).join('')}</div>`
+      : `<p class="hint">아직 근처에서 찾은 사무실이 없어요. 동료가 자기 앱에서 "공유 켜기"를 하면 몇 초 안에 여기 나타나요.${s.enabled ? '' : ' 동료 화면에 내가 보이려면 나도 공유를 켜야 해요.'}</p>`}
+    <p class="hint">"붙이기"를 누르면 상대 화면에 노크가 가고, 상대가 "허용"하면 자동으로 붙어요. 내가 공유 중이면 상대도 나를 같이 붙여요.</p>
+    <h3 style="margin:16px 0 6px">3. 붙인 동료</h3>
     ${(t.peers || []).length ? `<div class="cmds">${t.peers.map((p) => `<div><span>${esc(p.name || '')}</span><code>${esc(p.url)}</code><button data-remove="${esc(p.url)}" class="danger">빼기</button></div>`).join('')}</div>` : '<p class="hint">아직 붙인 동료가 없어요.</p>'}
+    <details><summary>주소와 키를 직접 넣기 (다른 네트워크나 Tailscale 로 붙일 때)</summary>
     <label>동료의 초대 주소</label><input type="text" id="pUrl" placeholder="예: http://192.168.0.12:4778" value="${esc(draftUrl ?? '')}" style="width:100%;font:inherit;color:var(--ink);background:var(--bg);border:2px solid var(--line);border-radius:4px;padding:6px">
     <label>동료의 초대 키</label><input type="text" id="pKey" placeholder="동료가 알려준 키" value="${esc(draftKey ?? '')}" style="width:100%;font:inherit;color:var(--ink);background:var(--bg);border:2px solid var(--line);border-radius:4px;padding:6px">
     <label>탭에 보일 이름 (비우면 동료가 정한 이름)</label><input type="text" id="pName" maxlength="24" value="${esc(draftPeerName ?? '')}" style="width:100%;font:inherit;color:var(--ink);background:var(--bg);border:2px solid var(--line);border-radius:4px;padding:6px">
-    <div class="row"><button id="tClose">닫기</button><button id="pAdd" class="primary">동료 붙이기</button></div>`
+    <div class="acts" style="margin-top:8px"><button id="pAdd">동료 붙이기</button></div></details>
+    <div class="row"><button id="tClose">닫기</button></div>`
   modal.style.display = 'flex'
   const q = (sel) => modalBox.querySelector(sel)
   q('#tClose').onclick = () => { closeModal(); delete modal.dataset.kind }
   modalBox.querySelectorAll('[data-copy]').forEach((b) => { b.onclick = () => copyText(b.dataset.copy, b) })
   modalBox.querySelectorAll('[data-remove]').forEach((b) => { b.onclick = () => ask('동료를 뺄까요?', `‘${b.dataset.remove}’ 의 사무실을 더 이상 보지 않아요.`, '빼기').then((ok) => ok && act('peerRemove', { url: b.dataset.remove })) })
+  modalBox.querySelectorAll('[data-knock]').forEach((b) => { b.onclick = () => act('knock', { url: b.dataset.knock }) })
+  modalBox.querySelectorAll('[data-allow]').forEach((b) => { b.onclick = () => act('knockAllow', { id: b.dataset.allow, allow: true }) })
+  modalBox.querySelectorAll('[data-deny]').forEach((b) => { b.onclick = () => act('knockAllow', { id: b.dataset.deny, allow: false }) })
   if (q('#tOn')) q('#tOn').onclick = () => act('shareOn', { name: q('#tName').value })
   if (q('#tOff')) q('#tOff').onclick = () => act('shareOff', {})
   if (q('#tNewKey')) q('#tNewKey').onclick = () => ask('초대 키를 새로 만들까요?', '지금 키로 등록한 동료들은 새 키로 다시 등록해야 해요.', '새로 만들기').then((ok) => ok && act('shareNewKey', {}))

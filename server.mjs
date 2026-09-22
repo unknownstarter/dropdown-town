@@ -6,7 +6,7 @@ import { readFile, readdir, stat, open, realpath, mkdir, writeFile } from 'node:
 import path from 'node:path'
 import os from 'node:os'
 import { fileURLToPath } from 'node:url'
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { existsSync } from 'node:fs'
 
@@ -577,6 +577,22 @@ function startShare() {
   shareError = null
   shareServer = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://x')
+    // 노크는 키 없이도 받는다(키를 받으려고 두드리는 것이니까). 대신 허용 전에는 아무것도 내주지 않는다.
+    if (url.pathname === '/peer/knock') {
+      try {
+        if (req.method === 'POST') {
+          const body = await readBody(req), id = String(body.id || '').replace(/[^a-z0-9]/gi, '').slice(0, 16)
+          if (!id || id === config.id) { res.writeHead(400).end(); return }
+          const existing = knocks.get(id)
+          if (!existing && knocks.size >= 10) { res.writeHead(429).end(); return }
+          knocks.set(id, { id, name: String(body.name || '동료').slice(0, 24), url: validPeerUrl(String(body.url || '')), key: typeof body.key === 'string' ? body.key.slice(0, 64) : '', at: Date.now(), status: existing?.status === 'allowed' ? 'allowed' : 'pending' })
+          res.writeHead(200, { 'content-type': TYPES['.json'] }); res.end(JSON.stringify({ ok: true, status: knocks.get(id).status, name: config.share.name })); return
+        }
+        const k = knocks.get(String(url.searchParams.get('id') || '').replace(/[^a-z0-9]/gi, '').slice(0, 16))
+        res.writeHead(200, { 'content-type': TYPES['.json'] })
+        res.end(JSON.stringify(k && k.status === 'allowed' ? { status: 'allowed', key: config.share.key, name: config.share.name } : { status: k ? k.status : 'none' })); return
+      } catch { res.writeHead(400).end(); return }
+    }
     if (!config.share.key || req.headers['x-town-key'] !== config.share.key) { res.writeHead(403).end(); return }
     try {
       if (url.pathname === '/peer/avatar' && req.method === 'POST') { // 방문자 아바타 위치. 이름당 하나, 최대 12명
@@ -595,6 +611,70 @@ function startShare() {
   shareServer.listen(config.share.port, '0.0.0.0')
 }
 function stopShare() { if (shareServer) { shareServer.close(); shareServer = null } }
+
+/* ---------- 근처 사무실 찾기와 노크 (Bonjour) ---------- */
+// 맥에 내장된 dns-sd 로 같은 와이파이의 Dropdown Town 을 광고하고 찾는다. 주소와 키를 손으로 옮길 필요가 없다.
+// 흐름: 근처 목록에서 "붙이기"(노크) → 상대 화면에 "OO 님이 보고 싶어 해요" → 상대가 "허용" → 상대의 키가 내게 오고, 내가 공유 중이면 상대도 나를 붙인다.
+const SERVICE = '_dropdowntown._tcp'
+const knocks = new Map() // 나에게 온 노크: id → { name, url, key, at, status }
+const outKnocks = new Map() // 내가 보낸 노크: url → { name, at, status }
+let advertiser = null, browser = null
+const nearby = new Map() // 인스턴스 이름 → { name, host, port, id, url, at }
+const dnssd = (args, ms) => new Promise((resolve) => { // dns-sd 는 끝나지 않는 명령이라 정해진 시간만 돌리고 출력을 거둔다
+  let out = ''
+  const p = spawn('/usr/bin/dns-sd', args)
+  p.stdout.on('data', (d) => { out += d })
+  p.on('error', () => resolve(out))
+  setTimeout(() => { p.kill(); resolve(out) }, ms)
+})
+function startAdvertise() {
+  if (advertiser || !config.share.enabled || !existsSync('/usr/bin/dns-sd')) return
+  advertiser = spawn('/usr/bin/dns-sd', ['-R', config.share.name, SERVICE, '.', String(config.share.port), `id=${config.id}`], { stdio: 'ignore' })
+  advertiser.on('exit', () => { advertiser = null })
+}
+function stopAdvertise() { if (advertiser) { advertiser.kill(); advertiser = null } }
+async function lookupNearby(instance) {
+  const out = await dnssd(['-L', instance, SERVICE, 'local.'], 2500)
+  const m = out.match(/can be reached at (\S+?):(\d+)/), id = out.match(/\bid=([a-z0-9]+)/)?.[1] || ''
+  if (!m) return
+  const host = m[1].replace(/\.$/, '').toLowerCase() // URL 의 origin 은 소문자라, 같은 맥이 두 번 등록되지 않게 여기서도 소문자로 맞춘다
+  nearby.set(instance, { name: instance, host, port: Number(m[2]), id, url: `http://${host}:${m[2]}`, at: Date.now() })
+}
+function startBrowse() {
+  if (browser || !existsSync('/usr/bin/dns-sd')) return
+  browser = spawn('/usr/bin/dns-sd', ['-B', SERVICE, 'local.'])
+  let buf = ''
+  browser.stdout.on('data', (d) => {
+    buf += d
+    const lines = buf.split('\n'); buf = lines.pop()
+    for (const line of lines) {
+      const m = line.match(/^\S+\s+(Add|Rmv)\s+\d+\s+\d+\s+\S+\s+_dropdowntown\._tcp\.\s+(.+?)\s*$/)
+      if (!m) continue
+      if (m[1] === 'Rmv') nearby.delete(m[2])
+      else if (!nearby.has(m[2]) || Date.now() - nearby.get(m[2]).at > 60000) lookupNearby(m[2]).catch(() => {})
+    }
+  })
+  browser.on('exit', () => { browser = null; setTimeout(startBrowse, 5000) })
+}
+const nearbyList = () => [...nearby.values()].filter((n) => n.id !== config.id && Date.now() - n.at < 15 * 60 * 1000).map((n) => ({ name: n.name, url: n.url, id: n.id, peer: config.peers.some((p) => p.url === n.url || (n.id && p.id === n.id)), knock: outKnocks.get(n.url)?.status || null }))
+// 내가 보낸 노크가 허용됐는지 3초마다 물어본다. 허용되면 상대를 동료로 붙인다.
+async function pollKnocks() {
+  for (const [url, k] of outKnocks) {
+    if (k.status !== 'pending') continue
+    if (Date.now() - k.at > 5 * 60 * 1000) { k.status = 'expired'; continue }
+    try {
+      const r = await fetch(`${url}/peer/knock?id=${config.id}`, { signal: AbortSignal.timeout(2000) })
+      const j = await r.json()
+      if (j.status === 'allowed' && j.key) {
+        if (!config.peers.some((p) => p.url === url)) { config.peers.push({ url, key: j.key, name: k.name || j.name || '동료', id: k.id || '' }); await saveConfig(); peerCache.at = 0 }
+        k.status = 'allowed'
+      } else if (j.status === 'denied') k.status = 'denied'
+    } catch {}
+  }
+  for (const [id, k] of knocks) if (Date.now() - k.at > 10 * 60 * 1000) knocks.delete(id)
+}
+setInterval(() => pollKnocks().catch(() => {}), 3000)
+setInterval(() => { for (const [name, n] of nearby) if (Date.now() - n.at > 60000) lookupNearby(name).catch(() => nearby.delete(name)) }, 30000) // 오래된 항목은 다시 확인
 // 동료 읽기는 화면 요청과 묶지 않는다. 뒤에서 2초마다 새로 읽어 두고 화면에는 마지막으로 읽은 값을 바로 준다.
 // 앱 안에서는 macOS 의 로컬 네트워크 허용 창이 뜬 동안 연결이 멈춰 시간 제한도 안 먹는 경우가 있어, 묶어 두면 화면 전체가 멈춘다.
 let peerCache = { at: 0, value: [] }, peerRefreshing = false
@@ -623,7 +703,8 @@ async function fetchPeer(p) {
     } catch (err) { return { url: p.url, name: p.name, ok: false, error: err.name === 'TimeoutError' ? '응답이 없어요 (맥이 잠들었거나 꺼져 있을 수 있어요)' : '연결하지 못했어요' } }
   }
 }
-const teamInfo = () => ({ id: config.id, share: { enabled: config.share.enabled, name: config.share.name, port: config.share.port, key: config.share.enabled ? config.share.key : null, addresses: lanAddresses(), listening: Boolean(shareServer), error: shareError }, peers: config.peers.map((p) => ({ url: p.url, name: p.name })) })
+const teamInfo = () => ({ id: config.id, share: { enabled: config.share.enabled, name: config.share.name, port: config.share.port, key: config.share.enabled ? config.share.key : null, addresses: lanAddresses(), listening: Boolean(shareServer), error: shareError }, peers: config.peers.map((p) => ({ url: p.url, name: p.name })),
+  nearby: nearbyList(), knocks: [...knocks.values()].filter((k) => k.status === 'pending').map((k) => ({ id: k.id, name: k.name, at: k.at })), outKnocks: [...outKnocks.entries()].map(([url, k]) => ({ url, name: k.name, status: k.status })) })
 const validPeerUrl = (u) => { try { const x = new URL(u); return ['http:', 'https:'].includes(x.protocol) ? x.origin : null } catch { return null } }
 Object.assign(ACTIONS, {
   // 화면이 알려 주는 내 아바타. 동료 방에 있으면 그 동료에게 250ms 에 한 번까지 밀어 준다(움직이지 않을 때는 화면이 3초마다 보낸다).
@@ -638,11 +719,34 @@ Object.assign(ACTIONS, {
     config.share.enabled = true
     if (typeof name === 'string' && name.trim()) config.share.name = name.trim().slice(0, 24)
     if (!config.share.key) config.share.key = randomBytes(12).toString('hex')
-    await saveConfig(); startShare()
+    await saveConfig(); startShare(); stopAdvertise(); startAdvertise()
     await new Promise((r) => setTimeout(r, 300))
-    return shareServer ? { ok: true, output: `공유를 켰어요. 초대 주소: http://${lanAddresses()[0] || '이 맥의 IP'}:${config.share.port}` } : { ok: false, output: shareError || '공유 서버를 열지 못했어요' }
+    return shareServer ? { ok: true, output: `공유를 켰어요. 근처 동료의 앱에 '${config.share.name}' 으로 보여요` } : { ok: false, output: shareError || '공유 서버를 열지 못했어요' }
   },
-  shareOff: async () => { config.share.enabled = false; stopShare(); await saveConfig(); return { ok: true, output: '공유를 껐어요' } },
+  shareOff: async () => { config.share.enabled = false; stopShare(); stopAdvertise(); await saveConfig(); return { ok: true, output: '공유를 껐어요' } },
+  // 근처 사무실에 노크: 내 이름과 번호, 그리고 내가 공유 중이면 내 주소와 키도 함께 보내 상대가 나를 바로 붙일 수 있게 한다.
+  knock: async ({ url }) => {
+    const n = [...nearby.values()].find((x) => x.url === url)
+    if (!n) return null
+    const myUrl = config.share.enabled ? `http://${lanAddresses()[0] || os.hostname()}:${config.share.port}` : ''
+    try {
+      const r = await fetch(`${url}/peer/knock`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: config.id, name: config.share.name, url: myUrl, key: config.share.enabled ? config.share.key : '' }), signal: AbortSignal.timeout(3000) })
+      if (!r.ok) return { ok: false, output: `‘${n.name}’ 이(가) 노크를 받지 못했어요 (HTTP ${r.status})` }
+      const j = await r.json()
+      outKnocks.set(url, { name: n.name, id: n.id, at: Date.now(), status: j.status === 'allowed' ? 'pending' : 'pending' })
+      return { ok: true, output: `‘${n.name}’ 에게 노크했어요. 상대가 허용하면 자동으로 붙어요` }
+    } catch { return { ok: false, output: `‘${n.name}’ 에 연결하지 못했어요. 상대가 공유를 켰는지 확인해 주세요` } }
+  },
+  // 나에게 온 노크를 허용하거나 거절한다. 허용하면 내 공유를 켜고(꺼져 있었다면), 상대가 주소와 키를 보냈으면 상대도 동료로 붙인다.
+  knockAllow: async ({ id, allow }) => {
+    const k = knocks.get(String(id || ''))
+    if (!k) return { ok: false, output: '이미 지난 노크예요' }
+    if (!allow) { k.status = 'denied'; return { ok: true, output: `‘${k.name}’ 의 노크를 거절했어요` } }
+    if (!config.share.enabled) { config.share.enabled = true; if (!config.share.key) config.share.key = randomBytes(12).toString('hex'); await saveConfig(); startShare(); startAdvertise() }
+    k.status = 'allowed'
+    if (k.url && k.key && !config.peers.some((p) => p.url === k.url)) { config.peers.push({ url: k.url, key: k.key, name: k.name, id: k.id }); await saveConfig(); peerCache.at = 0 }
+    return { ok: true, output: k.url && k.key ? `‘${k.name}’ 과(와) 서로 붙었어요` : `‘${k.name}’ 이(가) 내 사무실을 볼 수 있어요` }
+  },
   shareNewKey: async () => { config.share.key = randomBytes(12).toString('hex'); await saveConfig(); return { ok: true, output: '초대 키를 새로 만들었어요. 동료들은 새 키로 다시 등록해야 해요' } },
   peerAdd: async ({ url, key, name }) => {
     const origin = validPeerUrl(String(url || '').trim())
@@ -662,6 +766,8 @@ Object.assign(ACTIONS, {
 })
 await loadConfig()
 startShare()
+startAdvertise()
+startBrowse()
 
 const server = http.createServer(async (req, res) => {
   // DNS 리바인딩 방지: 로컬 호스트 이름으로 온 요청만 받는다.
