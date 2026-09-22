@@ -2,7 +2,7 @@
 // Dropdown Town: ~/.claude 의 세션 상태를 읽어 픽셀 사무실로 보여주는 로컬 서버.
 // 의존성 없음. 127.0.0.1 에만 열린다. ~/.claude 는 읽기만 하고, 세션 제어는 공식 claude 명령만 부른다.
 import http from 'node:http'
-import { readFile, readdir, stat, open, realpath } from 'node:fs/promises'
+import { readFile, readdir, stat, open, realpath, mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -497,6 +497,96 @@ async function readBody(req) {
 
 const TYPES = { '.html': 'text/html; charset=utf-8', '.png': 'image/png', '.json': 'application/json; charset=utf-8' }
 
+/* ---------- 팀: 다른 맥의 사무실 구경 ---------- */
+// "공유 켜기"를 하면 별도 포트(기본 4778)로 이 맥의 세션을 읽기 전용으로 내보낸다. 같은 와이파이나 Tailscale 같은 사설망에서
+// 초대 주소와 키를 아는 맥만 읽을 수 있다. 제어(멈춤, 새 세션, 릴레이)는 절대 내보내지 않는다.
+// 다른 맥을 "동료"로 등록하면 이 서버가 대신 읽어 와서 화면에 방으로 보여준다. 설정은 ~/.dropdown-town/config.json 에 남는다.
+const CONFIG_DIR = path.join(os.homedir(), '.dropdown-town'), CONFIG_FILE = path.join(CONFIG_DIR, 'config.json')
+let config = { share: { enabled: false, key: null, name: os.hostname().split('.')[0], port: 4778 }, peers: [] }
+async function loadConfig() {
+  try {
+    const j = JSON.parse(await readFile(CONFIG_FILE, 'utf8'))
+    config = { share: { ...config.share, ...(j.share || {}) }, peers: Array.isArray(j.peers) ? j.peers.filter((p) => p && typeof p.url === 'string' && typeof p.key === 'string') : [] }
+  } catch {}
+}
+async function saveConfig() {
+  await mkdir(CONFIG_DIR, { recursive: true })
+  await writeFile(CONFIG_FILE, JSON.stringify(config, null, 2))
+}
+const lanAddresses = () => Object.values(os.networkInterfaces()).flat().filter((i) => i && i.family === 'IPv4' && !i.internal).map((i) => i.address)
+// 동료에게 내보내는 모양: 화면이 그대로 그릴 수 있는 세션 정보. 권한 대기 내용과 긴 요청문은 뺀다.
+async function publicSnapshot() {
+  const data = await collect()
+  return {
+    name: config.share.name, now: data.now,
+    sessions: data.sessions.map((s) => ({ ...s, pending: null, intent: (s.intent || '').slice(0, 200) })),
+    agents: data.agents.map((a) => ({ type: a.type, scope: a.scope, count: a.count, active: a.active, lastAt: a.lastAt, description: '', recent: [], byProject: a.byProject })),
+    relay: data.relay && { name: data.relay.name, status: data.relay.status, step: data.relay.step, total: data.relay.total, jobs: data.relay.jobs, log: [] },
+  }
+}
+let shareServer = null, shareError = null
+function startShare() {
+  if (shareServer || !config.share.enabled) return
+  shareError = null
+  shareServer = http.createServer(async (req, res) => {
+    const url = new URL(req.url, 'http://x')
+    if (req.method !== 'GET' || !config.share.key || req.headers['x-town-key'] !== config.share.key) { res.writeHead(403).end(); return }
+    try {
+      if (url.pathname === '/peer/hello') { res.writeHead(200, { 'content-type': TYPES['.json'] }); res.end(JSON.stringify({ name: config.share.name })); return }
+      if (url.pathname === '/peer/sessions') { res.writeHead(200, { 'content-type': TYPES['.json'], 'cache-control': 'no-store' }); res.end(JSON.stringify(await publicSnapshot())); return }
+      res.writeHead(404).end()
+    } catch { res.writeHead(500).end() }
+  })
+  shareServer.on('error', (err) => { shareError = err.code === 'EADDRINUSE' ? `포트 ${config.share.port} 를 다른 프로그램이 쓰고 있어요` : String(err.message || err); shareServer = null })
+  shareServer.listen(config.share.port, '0.0.0.0')
+}
+function stopShare() { if (shareServer) { shareServer.close(); shareServer = null } }
+let peerCache = { at: 0, value: [] }
+async function fetchPeers() {
+  if (Date.now() - peerCache.at < 2000) return peerCache.value
+  const value = await Promise.all(config.peers.map(async (p) => {
+    try {
+      const r = await fetch(`${p.url.replace(/\/+$/, '')}/peer/sessions`, { headers: { 'x-town-key': p.key }, signal: AbortSignal.timeout(1500) })
+      if (!r.ok) return { url: p.url, name: p.name, ok: false, error: r.status === 403 ? '키가 맞지 않아요' : `HTTP ${r.status}` }
+      const j = await r.json()
+      return { url: p.url, name: p.name || j.name, ok: true, sessions: j.sessions || [], agents: j.agents || [], relay: j.relay || null }
+    } catch (err) { return { url: p.url, name: p.name, ok: false, error: err.name === 'TimeoutError' ? '응답이 없어요 (맥이 잠들었거나 꺼져 있을 수 있어요)' : '연결하지 못했어요' } }
+  }))
+  peerCache = { at: Date.now(), value }
+  return value
+}
+const teamInfo = () => ({ share: { enabled: config.share.enabled, name: config.share.name, port: config.share.port, key: config.share.enabled ? config.share.key : null, addresses: lanAddresses(), listening: Boolean(shareServer), error: shareError }, peers: config.peers.map((p) => ({ url: p.url, name: p.name })) })
+const validPeerUrl = (u) => { try { const x = new URL(u); return ['http:', 'https:'].includes(x.protocol) ? x.origin : null } catch { return null } }
+Object.assign(ACTIONS, {
+  shareOn: async ({ name }) => {
+    config.share.enabled = true
+    if (typeof name === 'string' && name.trim()) config.share.name = name.trim().slice(0, 24)
+    if (!config.share.key) config.share.key = randomBytes(12).toString('hex')
+    await saveConfig(); startShare()
+    await new Promise((r) => setTimeout(r, 300))
+    return shareServer ? { ok: true, output: `공유를 켰어요. 초대 주소: http://${lanAddresses()[0] || '이 맥의 IP'}:${config.share.port}` } : { ok: false, output: shareError || '공유 서버를 열지 못했어요' }
+  },
+  shareOff: async () => { config.share.enabled = false; stopShare(); await saveConfig(); return { ok: true, output: '공유를 껐어요' } },
+  shareNewKey: async () => { config.share.key = randomBytes(12).toString('hex'); await saveConfig(); return { ok: true, output: '초대 키를 새로 만들었어요. 동료들은 새 키로 다시 등록해야 해요' } },
+  peerAdd: async ({ url, key, name }) => {
+    const origin = validPeerUrl(String(url || '').trim())
+    if (!origin || typeof key !== 'string' || !key.trim()) return null
+    if (config.peers.some((p) => p.url === origin)) return { ok: false, output: '이미 등록된 동료예요' }
+    try {
+      const r = await fetch(`${origin}/peer/hello`, { headers: { 'x-town-key': key.trim() }, signal: AbortSignal.timeout(3000) })
+      if (r.status === 403) return { ok: false, output: '초대 키가 맞지 않아요' }
+      if (!r.ok) return { ok: false, output: `연결은 됐지만 응답이 이상해요 (HTTP ${r.status})` }
+      const j = await r.json()
+      config.peers.push({ url: origin, key: key.trim(), name: String(name || j.name || '동료').slice(0, 24) })
+      await saveConfig(); peerCache.at = 0
+      return { ok: true, output: `‘${config.peers.at(-1).name}’ 의 사무실을 붙였어요` }
+    } catch { return { ok: false, output: '그 주소에 연결하지 못했어요. 같은 와이파이인지, 상대가 공유를 켰는지 확인해 주세요' } }
+  },
+  peerRemove: async ({ url }) => { config.peers = config.peers.filter((p) => p.url !== url); await saveConfig(); peerCache.at = 0; return { ok: true, output: '동료를 뺐어요' } },
+})
+await loadConfig()
+startShare()
+
 const server = http.createServer(async (req, res) => {
   // DNS 리바인딩 방지: 로컬 호스트 이름으로 온 요청만 받는다.
   const host = (req.headers.host || '').split(':')[0]
@@ -518,8 +608,9 @@ const server = http.createServer(async (req, res) => {
       return
     }
     if (url.pathname === '/api/sessions') {
+      const [data, peers] = await Promise.all([collect(), fetchPeers()])
       res.writeHead(200, { 'content-type': TYPES['.json'], 'cache-control': 'no-store' })
-      res.end(JSON.stringify(await collect()))
+      res.end(JSON.stringify({ ...data, team: { ...teamInfo(), peers } }))
       return
     }
     const rel = url.pathname === '/' ? 'index.html' : path.normalize(url.pathname).replace(/^[/\\]+/, '')
