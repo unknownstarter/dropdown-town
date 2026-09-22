@@ -58,7 +58,7 @@ async function lastActivity(file, sidechain = false, deep = false) {
 
   // 끝에서부터 거슬러 올라가며 찾는다: 최근에 쓴 도구, 권한 모드, 세션이 마지막으로 한 말, 허락을 기다리는 도구.
   // 도구 호출은 보통 끝난 뒤에야 기록되므로 "실행 중" 은 알 수 없고, 맨 끝에 결과 없는 도구 호출이 남아 있을 때만 대기 중으로 본다.
-  const value = { tool: null, at: st.mtimeMs, mode: null, lastText: null, pending: null, received: msgs.received, sent: msgs.sent }
+  const value = { tool: null, at: st.mtimeMs, mode: null, lastText: null, pending: null, received: msgs.received, sent: msgs.sent, talks: msgs.history.map(({ key, ...h }) => h) }
   const lines = buf.toString('utf8').split('\n')
   let sawTurn = false
   for (let i = lines.length - 1; i >= 0 && !(value.tool && value.mode && value.lastText); i--) {
@@ -91,8 +91,28 @@ async function lastActivity(file, sidechain = false, deep = false) {
 // 처음 보는 파일은 끝 96KB 부터 시작하고, 다른 세션이나 조수가 보낸 메시지(사용자 행의 <agent-message from=...>)와
 // 이 세션이 SendMessage 로 보낸 메시지를 각각 가장 최근 것 하나만 기억한다.
 const msgCache = new Map()
+// 행 안 어딘가에 들어 있는 받은 메시지 원문을 찾는다(user 행은 content 글자, attachment 행은 더 깊은 곳에 있다).
+function findTagged(v, depth = 0) {
+  if (typeof v === 'string') return v.includes('<agent-message from=') ? v : null
+  if (!v || typeof v !== 'object' || depth > 6) return null
+  for (const x of Array.isArray(v) ? v : Object.values(v)) { const hit = findTagged(x, depth + 1); if (hit) return hit }
+  return null
+}
+// 받은 메시지에서 사람이 읽을 본문만 남긴다: 앞뒤 틀 문구와 들여쓰기를 걷어내고 공백을 한 칸으로.
+function messageBody(raw) {
+  let body = raw.slice(raw.indexOf('>', raw.indexOf('<agent-message from=')) + 1)
+  body = body.split('</agent-message>')[0]
+  body = body.replace(/\[Subagent hand-back\][\s\S]*?The report follows:/, '').replace(/\s+/g, ' ').trim()
+  return body.slice(0, 280)
+}
+const pushTalk = (c, entry) => { // 같은 메시지가 여러 행(대기열, 첨부)에 되풀이되므로 상대와 앞부분이 같으면 한 번만 둔다
+  const key = `${entry.dir}|${entry.peer}|${entry.text.slice(0, 60)}`
+  if (c.history.some((h) => h.key === key)) return
+  c.history.push({ ...entry, key })
+  if (c.history.length > 8) c.history.shift()
+}
 async function scanMessages(file, st) {
-  const c = msgCache.get(file) || { offset: Math.max(0, st.size - TAIL_BYTES), received: null, sent: null }
+  const c = msgCache.get(file) || { offset: Math.max(0, st.size - TAIL_BYTES), received: null, sent: null, history: [] }
   if (st.size > c.offset) {
     const len = Math.min(st.size - c.offset, 4 * 1024 * 1024)
     const fh = await open(file, 'r'), buf = Buffer.alloc(len)
@@ -106,10 +126,16 @@ async function scanMessages(file, st) {
       const content = row?.message?.content, at = Date.parse(row.timestamp) || st.mtimeMs
       if (row.type !== 'assistant' && line.includes('agent-message from=')) { // 받은 메시지는 user, attachment, queue-operation 등 여러 종류의 행에 실린다
         const m = line.match(/<agent-message from=\\?"([A-Za-z0-9._-]+)\\?"/) // 식별자 글자만 허용해 코드 조각 같은 것을 메시지로 오인하지 않게
-        if (m) c.received = { from: m[1], at, handback: line.includes('[Subagent hand-back]') }
+        if (!m) continue
+        const handback = line.includes('[Subagent hand-back]'), raw = findTagged(row) || ''
+        c.received = { from: m[1], at, handback }
+        pushTalk(c, { dir: 'in', peer: m[1], at, handback, text: raw ? messageBody(raw) : '' })
       } else if (row.type === 'assistant' && Array.isArray(content)) {
-        const msg = content.findLast((b) => b.type === 'tool_use' && b.name === 'SendMessage')
-        if (msg) c.sent = { to: String(msg.input?.to || ''), at }
+        for (const msg of content.filter((b) => b.type === 'tool_use' && b.name === 'SendMessage')) {
+          const to = String(msg.input?.to || '').slice(0, 80), text = String(msg.input?.summary || msg.input?.message || '').replace(/\s+/g, ' ').trim().slice(0, 280)
+          c.sent = { to, at }
+          pushTalk(c, { dir: 'out', peer: to, at, handback: false, text })
+        }
       }
     }
     c.offset += cut + 1
@@ -247,6 +273,7 @@ async function collect() {
       id: job.daemonShort || job.sessionId,
       subagents,
       received: activity?.received ?? null,
+      talks: activity?.talks ?? [],
       sent: activity?.sent ?? null,
       relay: relayInfo(job.daemonShort),
       kind: 'bg',
@@ -321,7 +348,14 @@ const run = (file, args, opts = {}) => new Promise((resolve) => {
 const RELAY_MAX_STEPS = 4
 let relay = null
 const relayInfo = (id) => (relay && id && relay.jobs.includes(id) ? { name: relay.name, step: relay.jobs.indexOf(id) + 1, total: relay.steps.length, status: relay.status } : null)
-const relayPublic = () => relay && { name: relay.name, status: relay.status, step: relay.current + 1, total: relay.steps.length, jobs: relay.jobs, log: relay.log.slice(-6), cwd: relay.cwd }
+const ACTIVE = ['running', 'blocked', 'review']
+// 사람이 고칠 수 있는 첫 단계: 확인 대기 중이면 곧 시작할 단계부터, 진행 중이면 그다음 단계부터.
+const firstEditable = () => (relay.status === 'review' ? relay.current : relay.current + 1)
+const relayPublic = () => relay && {
+  name: relay.name, status: relay.status, step: relay.current + 1, total: relay.steps.length, jobs: relay.jobs, log: relay.log.slice(-8), cwd: relay.cwd,
+  steps: relay.steps, editableFrom: firstEditable(), review: relay.review, pauseNext: relay.pauseNext,
+  handoff: relay.status === 'review' ? (relay.results[relay.current - 1] || '').slice(0, 8000) : null,
+}
 async function relayLaunch() {
   relay.launching = true
   try { await relayLaunchInner() } finally { relay.launching = false }
@@ -330,7 +364,8 @@ async function relayLaunchInner() {
   const i = relay.current, prev = relay.results[i - 1] || ''
   const step = relay.steps[i]
   const prompt = (step.includes('{{prev}}') ? step.replace(/\{\{prev\}\}/g, prev) : prev ? `${step}\n\n[앞 단계에서 넘어온 결과]\n${prev}` : step).slice(0, 12000)
-  const out = await run(claudeBin, ['--bg', `[릴레이 ${relay.name} ${i + 1}/${relay.steps.length}] ${prompt}`], { cwd: relay.cwd })
+  // 새 세션은 뜨는 데 30초 넘게 걸리기도 한다(특히 앱을 막 켠 직후). 짧은 제한으로 끊으면 SIGTERM 으로 실패한다.
+  const out = await run(claudeBin, ['--bg', `[릴레이 ${relay.name} ${i + 1}/${relay.steps.length}] ${prompt}`], { cwd: relay.cwd, timeout: 180000 })
   const id = out.output.match(/\b[0-9a-f]{8}\b/)?.[0]
   if (!out.ok || !id) { relay.status = 'failed'; relay.log.push(`${i + 1}단계 시작 실패: ${out.output.slice(0, 120)}`); return }
   relay.jobs.push(id); relay.status = 'running'; relay.log.push(`${i + 1}단계 시작 (${id})`)
@@ -352,9 +387,13 @@ async function relayTick() {
   relay.log.push(`${relay.current + 1}단계 완료`)
   relay.current++
   if (relay.current >= relay.steps.length) { relay.status = 'done'; relay.log.push('릴레이 완료'); return }
+  // 사람이 끼어들기로 했으면(단계마다 확인, 또는 이번 한 번만 멈춤) 다음 단계를 열기 전에 기다린다. 넘길 결과와 다음 지시문을 고칠 수 있다.
+  if (relay.review || relay.pauseNext) { relay.pauseNext = false; relay.status = 'review'; relay.log.push(`${relay.current}단계 결과를 확인해 주세요`); return }
   await relayLaunch()
 }
 setInterval(() => relayTick().catch((err) => { if (relay) { relay.status = 'failed'; relay.log.push(String(err.message || err).slice(0, 120)) } }), 3000)
+
+const cleanSteps = (steps) => (Array.isArray(steps) ? steps.map((x) => String(x || '').trim()).filter(Boolean).slice(0, RELAY_MAX_STEPS) : [])
 
 const hasState = (id, states) => /^[0-9a-f]{8}$/.test(id || '') && states.includes(jobStates.get(id))
 const ACTIONS = {
@@ -363,16 +402,16 @@ const ACTIONS = {
   // 휴게실의 끝났거나 멈춘 세션을 지운다. push 안 된 커밋이 있는 워크트리는 claude rm 이 스스로 거부한다.
   remove: ({ id }) => (hasState(id, ['done', 'stopped']) ? run(claudeBin, ['rm', id]) : null),
   // 새 백그라운드 세션. 폴더는 이미 세션이 돌았던 프로젝트 중에서만 고른다.
-  start: ({ cwd, prompt }) => (knownDirs.has(cwd) && typeof prompt === 'string' && prompt.trim() ? run(claudeBin, ['--bg', prompt.trim().slice(0, 4000)], { cwd }) : null),
+  start: ({ cwd, prompt }) => (knownDirs.has(cwd) && typeof prompt === 'string' && prompt.trim() ? run(claudeBin, ['--bg', prompt.trim().slice(0, 4000)], { cwd, timeout: 180000 }) : null),
   // 터미널 앱에서 그 세션을 연다. 권한 요청에 대한 수락과 거절은 거기서 직접 한다.
   // 릴레이 시작: 프로젝트 하나, 단계 지시문 1~4개. 앞 단계 결과는 {{prev}} 자리에, 없으면 지시문 끝에 붙는다.
-  relayStart: async ({ cwd, name, steps }) => {
-    if (relay && ['running', 'blocked'].includes(relay.status)) return { ok: false, output: '이미 도는 릴레이가 있어요. 먼저 멈춰 주세요.' }
-    const list = Array.isArray(steps) ? steps.map((x) => String(x || '').trim()).filter(Boolean).slice(0, RELAY_MAX_STEPS) : []
+  relayStart: async ({ cwd, name, steps, review }) => {
+    if (relay && ACTIVE.includes(relay.status)) return { ok: false, output: '이미 도는 릴레이가 있어요. 먼저 멈춰 주세요.' }
+    const list = cleanSteps(steps)
     if (!knownDirs.has(cwd) || !list.length) return null
-    relay = { name: String(name || '릴레이').slice(0, 24), cwd, steps: list, current: 0, jobs: [], results: [], status: 'starting', log: [], startedAt: Date.now() }
-    await relayLaunch()
-    return { ok: relay.status === 'running', output: relay.log.at(-1) }
+    relay = { name: String(name || '릴레이').slice(0, 24), cwd, steps: list, current: 0, jobs: [], results: [], status: 'starting', log: ['1단계를 시작하는 중'], startedAt: Date.now(), review: Boolean(review), pauseNext: false }
+    relayLaunch() // 세션이 뜨는 데 시간이 걸리므로 기다리지 않고 답한다. 진행은 위쪽 표시에서 보인다.
+    return { ok: true, output: '릴레이를 시작했어요. 1단계 세션이 뜨는 중이에요.' }
   },
   // 릴레이 멈춤: 지금 단계 세션을 멈추고 더 진행하지 않는다.
   relayStop: async () => {
@@ -382,7 +421,33 @@ const ACTIONS = {
     relay.status = 'stopped'; relay.log.push('사람이 멈췄어요')
     return { ok: true, output: '릴레이를 멈췄어요' }
   },
-  relayClear: () => { if (relay && !['running', 'blocked'].includes(relay.status)) relay = null; return { ok: true, output: '' } },
+  relayClear: () => { if (relay && !ACTIVE.includes(relay.status)) relay = null; return { ok: true, output: '' } },
+  // 끼어들기 1: 아직 시작하지 않은 단계의 지시문을 고친다(늘리거나 줄이기 포함, 최대 4단계). 이미 시작한 단계는 못 고친다.
+  relayEdit: ({ steps, review }) => {
+    if (!relay || !ACTIVE.includes(relay.status)) return { ok: false, output: '도는 릴레이가 없어요' }
+    const from = firstEditable(), list = Array.isArray(steps) ? steps.map((x) => String(x || '').trim()) : null
+    if (!list) return null
+    const next = [...relay.steps.slice(0, from), ...list.slice(from).filter(Boolean)].slice(0, RELAY_MAX_STEPS)
+    relay.steps = next
+    if (typeof review === 'boolean') relay.review = review
+    relay.log.push('남은 단계를 고쳤어요')
+    return { ok: true, output: `남은 단계를 고쳤어요 (${next.length}단계)` }
+  },
+  // 끼어들기 2: 지금 단계가 끝나면 다음 단계를 열기 전에 한 번 멈춘다.
+  relayPause: () => {
+    if (!relay || !['running', 'blocked'].includes(relay.status)) return { ok: false, output: '진행 중인 릴레이가 없어요' }
+    relay.pauseNext = true
+    return { ok: true, output: '이 단계가 끝나면 넘기기 전에 멈출게요' }
+  },
+  // 확인을 마치고 이어서 진행한다. 넘길 결과를 사람이 고쳤으면 그걸 넘긴다. 남은 단계가 없으면 그대로 끝낸다.
+  relayResume: async ({ handoff }) => {
+    if (!relay || relay.status !== 'review') return { ok: false, output: '확인을 기다리는 릴레이가 없어요' }
+    if (typeof handoff === 'string') relay.results[relay.current - 1] = handoff.slice(0, 12000)
+    if (relay.current >= relay.steps.length) { relay.status = 'done'; relay.log.push('릴레이 완료'); return { ok: true, output: '릴레이를 마쳤어요' } }
+    relay.status = 'starting'; relay.log.push(`${relay.current}단계 결과를 확인하고 넘겼어요`)
+    relayLaunch()
+    return { ok: true, output: `${relay.current + 1}단계 세션이 뜨는 중이에요` }
+  },
   attach: ({ id }) => (hasState(id, ['working', 'blocked', 'done', 'stopped']) && !/["\\$`]/.test(claudeBin)
     ? run('/usr/bin/osascript', ['-e', `tell application "Terminal" to do script "'${claudeBin}' attach ${id}"`, '-e', 'tell application "Terminal" to activate'])
     : null),
