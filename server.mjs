@@ -522,7 +522,26 @@ async function publicSnapshot() {
     sessions: data.sessions.map((s) => ({ ...s, pending: null, intent: (s.intent || '').slice(0, 200) })),
     agents: data.agents.map((a) => ({ type: a.type, scope: a.scope, count: a.count, active: a.active, lastAt: a.lastAt, description: '', recent: [], byProject: a.byProject })),
     relay: data.relay && { name: data.relay.name, status: data.relay.status, step: data.relay.step, total: data.relay.total, jobs: data.relay.jobs, log: [] },
+    avatars: liveAvatars(),
   }
+}
+// 아바타 위치 공유: 화면이 내 아바타 위치를 이 서버에 알리고(avatar 동작), 내가 동료 방에 있으면 그 동료의 공유 포트로 밀어 준다.
+// 동료가 내 방에 오면 같은 방식으로 내 공유 포트에 들어오고(visitors), 내 화면과 다른 방문자에게 보인다. 12초 동안 소식이 없으면 사라진다.
+const VISITOR_TTL = 12000
+let myAvatar = null
+const visitors = new Map(), pushedAt = new Map()
+const cleanAvatar = (a) => ({ name: String(a.name || '').slice(0, 24), x: Number(a.x) || 0, y: Number(a.y) || 0, dir: ['up', 'down', 'left', 'right'].includes(a.dir) ? a.dir : 'down', look: a.look && typeof a.look === 'object' ? { body: Number(a.look.body) || 0, hairStyle: Number(a.look.hairStyle) || 0, outfit: Number(a.look.outfit) || 0, acc: String(a.look.acc || 'crown').slice(0, 12), accColor: String(a.look.accColor || '#ffffff').slice(0, 9), nick: String(a.look.nick || '').slice(0, 14), hair: String(a.look.hair || '#2b2230').slice(0, 9), skin: String(a.look.skin || '#f7d7b5').slice(0, 9), shirt: String(a.look.shirt || '#ff8a3d').slice(0, 9) } : {}, at: Date.now() })
+function liveAvatars() { // 내 방에 있는 아바타들: 내 방에 있는 나 + 방문자들
+  const out = []
+  if (myAvatar && myAvatar.room === 'me' && Date.now() - myAvatar.at < VISITOR_TTL) out.push({ ...myAvatar, owner: true })
+  for (const [name, a] of visitors) { if (Date.now() - a.at > VISITOR_TTL) visitors.delete(name); else out.push(a) }
+  return out
+}
+async function pushAvatarTo(roomUrl) {
+  const peer = config.peers.find((p) => p.url === roomUrl)
+  if (!peer || !myAvatar) return
+  pushedAt.set(roomUrl, Date.now())
+  try { await fetch(`${peer.url}/peer/avatar`, { method: 'POST', headers: { 'x-town-key': peer.key, 'content-type': 'application/json' }, body: JSON.stringify(myAvatar), signal: AbortSignal.timeout(1500) }) } catch {}
 }
 let shareServer = null, shareError = null
 function startShare() {
@@ -530,8 +549,14 @@ function startShare() {
   shareError = null
   shareServer = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://x')
-    if (req.method !== 'GET' || !config.share.key || req.headers['x-town-key'] !== config.share.key) { res.writeHead(403).end(); return }
+    if (!config.share.key || req.headers['x-town-key'] !== config.share.key) { res.writeHead(403).end(); return }
     try {
+      if (url.pathname === '/peer/avatar' && req.method === 'POST') { // 방문자 아바타 위치. 이름당 하나, 최대 12명
+        const a = cleanAvatar(await readBody(req))
+        if (a.name && (visitors.has(a.name) || visitors.size < 12)) visitors.set(a.name, a)
+        res.writeHead(200, { 'content-type': TYPES['.json'] }); res.end('{"ok":true}'); return
+      }
+      if (req.method !== 'GET') { res.writeHead(405).end(); return }
       if (url.pathname === '/peer/hello') { res.writeHead(200, { 'content-type': TYPES['.json'] }); res.end(JSON.stringify({ name: config.share.name })); return }
       if (url.pathname === '/peer/sessions') { res.writeHead(200, { 'content-type': TYPES['.json'], 'cache-control': 'no-store' }); res.end(JSON.stringify(await publicSnapshot())); return }
       res.writeHead(404).end()
@@ -549,7 +574,7 @@ async function fetchPeers() {
       const r = await fetch(`${p.url.replace(/\/+$/, '')}/peer/sessions`, { headers: { 'x-town-key': p.key }, signal: AbortSignal.timeout(1500) })
       if (!r.ok) return { url: p.url, name: p.name, ok: false, error: r.status === 403 ? '키가 맞지 않아요' : `HTTP ${r.status}` }
       const j = await r.json()
-      return { url: p.url, name: p.name || j.name, ok: true, sessions: j.sessions || [], agents: j.agents || [], relay: j.relay || null }
+      return { url: p.url, name: p.name || j.name, ok: true, sessions: j.sessions || [], agents: j.agents || [], relay: j.relay || null, avatars: Array.isArray(j.avatars) ? j.avatars.slice(0, 13).map((a) => ({ ...cleanAvatar(a), owner: Boolean(a.owner) })) : [] }
     } catch (err) { return { url: p.url, name: p.name, ok: false, error: err.name === 'TimeoutError' ? '응답이 없어요 (맥이 잠들었거나 꺼져 있을 수 있어요)' : '연결하지 못했어요' } }
   }))
   peerCache = { at: Date.now(), value }
@@ -558,6 +583,12 @@ async function fetchPeers() {
 const teamInfo = () => ({ share: { enabled: config.share.enabled, name: config.share.name, port: config.share.port, key: config.share.enabled ? config.share.key : null, addresses: lanAddresses(), listening: Boolean(shareServer), error: shareError }, peers: config.peers.map((p) => ({ url: p.url, name: p.name })) })
 const validPeerUrl = (u) => { try { const x = new URL(u); return ['http:', 'https:'].includes(x.protocol) ? x.origin : null } catch { return null } }
 Object.assign(ACTIONS, {
+  // 화면이 알려 주는 내 아바타. 동료 방에 있으면 그 동료에게 250ms 에 한 번까지 밀어 준다(움직이지 않을 때는 화면이 3초마다 보낸다).
+  avatar: ({ room, ...a }) => {
+    myAvatar = { ...cleanAvatar({ ...a, name: a.name || config.share.name }), room: typeof room === 'string' ? room : 'me' }
+    if (myAvatar.room !== 'me' && Date.now() - (pushedAt.get(myAvatar.room) || 0) >= 250) pushAvatarTo(myAvatar.room)
+    return { ok: true, output: '' }
+  },
   shareOn: async ({ name }) => {
     config.share.enabled = true
     if (typeof name === 'string' && name.trim()) config.share.name = name.trim().slice(0, 24)
@@ -610,7 +641,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/sessions') {
       const [data, peers] = await Promise.all([collect(), fetchPeers()])
       res.writeHead(200, { 'content-type': TYPES['.json'], 'cache-control': 'no-store' })
-      res.end(JSON.stringify({ ...data, team: { ...teamInfo(), peers } }))
+      res.end(JSON.stringify({ ...data, team: { ...teamInfo(), peers, visitors: liveAvatars().filter((a) => !a.owner) } }))
       return
     }
     const rel = url.pathname === '/' ? 'index.html' : path.normalize(url.pathname).replace(/^[/\\]+/, '')

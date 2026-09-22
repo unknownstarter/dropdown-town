@@ -585,7 +585,7 @@ function refreshLabels(e) {
   const extra = !isSub(e) && s.subagents.length > 2 ? ` +${s.subagents.length - 2}` : ''
   e.tag.classList.toggle('mini', isSub(e))
   e.tag.classList.toggle('near', nearId === e.id)
-  e.tag.innerHTML = e.id === ME ? `<i>★</i>${esc(name)}` : isSub(e) ? `${s.role ? '' : '<i>조수</i>'}${esc(name)}` : `<i>${s.relay ? `릴레이 ${s.relay.step}/${s.relay.total}` : 'Lv.' + level(s.tokens)}</i>${esc(name)}${extra}`
+  e.tag.innerHTML = e.id === ME || s.kind === 'guest' ? `<i>${s.kind === 'guest' && !s.owner ? '☆' : '★'}</i>${esc(name)}` : isSub(e) ? `${s.role ? '' : '<i>조수</i>'}${esc(name)}` : `<i>${s.relay ? `릴레이 ${s.relay.step}/${s.relay.total}` : 'Lv.' + level(s.tokens)}</i>${esc(name)}${extra}`
   e.tag.classList.toggle('sel', selected === e.id)
   let html = ''
   // .d 는 넓은 창에서만, .c 는 좁은 창에서만 보인다(좁은 창에서는 짧은 상태만 띄우고 자세한 내용은 카드 목록이 맡는다)
@@ -648,7 +648,7 @@ function sync(list) {
     lastSeenMsg.set(s.id, Math.max(seenAt, ...talks.map((t) => t.at)))
   }
   seen.add(ME); ensureAvatar()
-  for (const e of ents.values()) if (!seen.has(e.id) && !e.leaving) leave(e)
+  for (const e of ents.values()) if (!seen.has(e.id) && !e.leaving && e.data.kind !== 'guest') leave(e) // 방문자 아바타는 syncGuests 가 따로 관리한다
   const preselect = firstLoad && new URLSearchParams(location.search).get('select') // 주소의 ?select=세션id 로 그 캐릭터 패널을 연 채 시작한다
   if (preselect && ents.has(preselect)) { selected = preselect; renderPanel() }
   const rosterParam = firstLoad ? new URLSearchParams(location.search).get('roster') : null // ?roster 또는 ?roster=직군 으로 명부를 연 채 시작한다
@@ -673,6 +673,7 @@ function step(e, dt) {
 }
 function poseOf(e) {
   if (e.id === ME) return e.moving || e.path.length ? 'walk' : 'chill'
+  if (e.data.kind === 'guest') return e.path.length ? 'walk' : 'chill'
   if (e.path.length) return 'walk'
   if (isSub(e)) return 'assist'
   if (e.zone === 'work') return 'type'
@@ -789,6 +790,7 @@ function renderPanel(full = true) {
   const e = ents.get(selected); if (!e) return
   if (isSub(e)) return renderSubPanel(e)
   if (e.id === ME) return renderMePanel(e)
+  if (e.data.kind === 'guest') { panel.innerHTML = `<button class="x">×</button><h2>${esc(e.look.nick || e.data.name)}</h2><p class="hint">${room === 0 ? '내 사무실에 놀러 온 동료예요.' : '이 사무실 주인이거나 같이 구경 중인 동료예요.'}</p>`; panel.style.display = 'block'; panel.querySelector('.x').onclick = closePanel; return }
   const s = e.data, [label, color] = STATE_KO[e.zone] || ['퇴근 중', 'var(--dim)']
   const links = s.links.slice(-8).map((l) => `<a href="${esc(l.href)}" target="_blank" rel="noreferrer">${esc(l.kind === 'pr' ? 'PR #' + l.id : l.id)}</a>`).join(' ')
   const info = `
@@ -925,6 +927,7 @@ function stepAvatar(me, dt) {
   if (rooms.length > 1 && me.y < 60 && me.x > 322 && me.x < 362 && performance.now() - lastRoomSwitch > 1500) { me.y = 68; me.path = []; switchRoom((room + 1) % rooms.length) } // 문으로 나가면 옆 방으로
   if (me.moving || me.path.length) me.dirty = true
   else if (me.dirty) { me.dirty = false; try { localStorage.setItem('town.me.pos', JSON.stringify({ x: Math.round(me.x), y: Math.round(me.y) })) } catch {} }
+  pushAvatar(me, me.moving || me.path.length > 0)
   // 가까운 캐릭터: 이름표를 켜고 Enter 로 열 수 있게 한다
   let best = null, bestD = NEAR
   for (const e of ents.values()) { if (e === me || e.leaving) continue; const d = Math.hypot(e.x - me.x, e.y - me.y); if (d < bestD) { best = e; bestD = d } }
@@ -1215,13 +1218,14 @@ document.getElementById('relayBtn').onclick = () => {
 let rooms = [], room = 0, teamState = { share: {}, peers: [] }, lastRoomSwitch = 0
 function setRooms(team, mySessions, myAgents, myRelay) {
   teamState = team
-  rooms = [{ id: 'me', name: '내 사무실', ok: true, sessions: mySessions, agents: myAgents, relay: myRelay }, ...(team.peers || []).map((p) => ({ id: p.url, name: p.name || p.url, ok: p.ok, error: p.error, sessions: p.sessions || [], agents: p.agents || [], relay: p.relay || null }))]
+  rooms = [{ id: 'me', name: '내 사무실', ok: true, sessions: mySessions, agents: myAgents, relay: myRelay }, ...(team.peers || []).map((p) => ({ id: p.url, name: p.name || p.url, ok: p.ok, error: p.error, sessions: p.sessions || [], agents: p.agents || [], relay: p.relay || null, avatars: p.avatars || [] }))]
   if (room >= rooms.length) room = 0
   const cur = rooms[room]
   renderRooms()
   setRelay(room === 0 ? myRelay : cur.relay)
   setAgents(room === 0 ? myAgents : cur.agents)
   sync(cur.ok ? cur.sessions : [])
+  syncGuests(room === 0 ? team.visitors : cur.avatars)
   if (modal.dataset.kind === 'team' && modal.style.display === 'flex') openTeamPanel(false)
 }
 function renderRooms() {
@@ -1239,13 +1243,39 @@ function switchRoom(i) {
   for (const e of ents.values()) if (e.id !== ME) { e.tag.remove(); e.bubble.remove(); ents.delete(e.id) } // 방을 바꾸면 그 방 사람들을 처음부터 그린다
   for (const k in slots) slots[k] = []
   planes.length = 0; talkLinks.clear(); lastSeenMsg.clear()
-  room = i; firstLoad = true
+  room = i; firstLoad = true; lastPush = 0
   const cur = rooms[room]
   renderRooms()
   setRelay(room === 0 ? rooms[0].relay : cur.relay)
   setAgents(room === 0 ? rooms[0].agents : cur.agents)
   sync(cur.ok ? cur.sessions : [])
+  syncGuests(room === 0 ? teamState.visitors : cur.avatars)
   toast(room === 0 ? '내 사무실로 돌아왔어요' : cur.ok ? `‘${cur.name}’ 의 사무실이에요 (구경만 할 수 있어요)` : `‘${cur.name}’ 의 맥에 연결되지 않아요: ${cur.error || ''}`)
+}
+// 아바타 위치 주고받기. 내 위치는 내 서버에 알리고(움직일 때 250ms, 가만히 있을 때 3초), 서버가 지금 있는 방의 동료에게 전달한다.
+let lastPush = 0, pushing = false
+function pushAvatar(me, moving) {
+  if (DEMO || pushing || performance.now() - lastPush < (moving ? 250 : 3000)) return
+  lastPush = performance.now(); pushing = true
+  const l = me.look
+  fetch('/api/action/avatar', { method: 'POST', headers: { 'content-type': 'application/json', 'x-town-token': TOKEN }, body: JSON.stringify({ room: rooms[room]?.id || 'me', name: l.nick || OWNER, x: Math.round(me.x), y: Math.round(me.y), dir: me.dir, look: { body: l.body, hairStyle: l.hairStyle, outfit: l.outfit, acc: l.acc, accColor: l.accColor, nick: l.nick, hair: l.hair, skin: l.skin, shirt: l.shirt } }) }).catch(() => {}).finally(() => { pushing = false })
+}
+// 이 방에 있는 다른 사람들의 아바타(방 주인과 방문자). 새 위치로 걸어가고, 소식이 끊기면 사라진다.
+function syncGuests(list) {
+  const seen = new Set(), myName = ents.get(ME)?.look.nick || OWNER
+  for (const a of list || []) {
+    if (!a.name || a.name === myName) continue
+    const id = 'guest:' + a.name
+    seen.add(id)
+    let g = ents.get(id)
+    if (!g) { g = makeEnt({ id, kind: 'guest', owner: Boolean(a.owner), name: a.name, state: 'idle', detail: '', intent: '', tokens: 0, subagents: [], links: [], talks: [] }); g.zone = 'guest'; g.x = a.x; g.y = a.y }
+    Object.assign(g.look, a.look || {}); sheets.delete(g.look)
+    g.data.owner = Boolean(a.owner)
+    if (Math.hypot(a.x - g.x, a.y - g.y) > 1) g.path = [{ x: a.x, y: a.y }]
+    g.dir = a.dir; g.spot = { x: a.x, y: a.y, face: a.dir }
+    refreshLabels(g)
+  }
+  for (const e of ents.values()) if (e.data.kind === 'guest' && !seen.has(e.id)) { e.tag.remove(); e.bubble.remove(); ents.delete(e.id); if (selected === e.id) closePanel() }
 }
 document.getElementById('teamBtn').onclick = () => openTeamPanel(true)
 function openTeamPanel(fresh) {
