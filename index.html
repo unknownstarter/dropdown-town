@@ -109,11 +109,18 @@
   #modal select, #modal textarea { width:100%; font:inherit; color:var(--ink); background:var(--bg); border:2px solid var(--line); border-radius:4px; padding:6px; }
   #modal textarea { height:110px; resize:vertical; }
   #modal .row { display:flex; justify-content:flex-end; gap:8px; margin-top:14px; }
-  #chatbar { width:100%; max-width:calc(480px * var(--s) + 8px); margin-top:6px; }
-  #chatlog { display:flex; flex-direction:column; gap:2px; margin-bottom:4px; font-size:11px; color:var(--dim); line-height:1.4; max-height:64px; overflow:auto; }
+  /* 채팅은 사무실 그림 아래가 아니라 그림 위 왼쪽 아래에 겹쳐 고정한다. 창이 커져 그림이 세로를 다 채워도 늘 보인다.
+     평소엔 최근 두 줄만 작게 보이고, 입력 칸을 누르거나 마우스를 올리면 펼쳐진다. */
+  #chatbar { position:absolute; left:8px; bottom:8px; z-index:3; width:min(56%, 420px); min-width:230px; padding:6px; background:rgba(20,16,30,.72); border:2px solid var(--line); border-radius:6px; backdrop-filter:blur(2px); }
+  #chatbar:hover, #chatbar:focus-within { background:rgba(20,16,30,.92); }
+  #chatlog { display:flex; flex-direction:column; gap:2px; margin-bottom:4px; font-size:11px; color:var(--dim); line-height:1.4; max-height:32px; overflow:hidden; transition:max-height .15s; }
+  #chatbar:hover #chatlog, #chatbar:focus-within #chatlog { max-height:140px; overflow:auto; }
+  #chatlog:empty { display:none; }
   #chatlog b { font-weight:normal; color:var(--work); margin-right:4px; } #chatlog .mine b { color:var(--rest); }
-  #chatform { display:flex; gap:6px; } #chatform input { flex:1; font:inherit; color:var(--ink); background:var(--panel); border:2px solid var(--line); border-radius:4px; padding:4px 8px; }
+  #chatform { display:flex; gap:6px; } #chatform input { flex:1; min-width:0; font:inherit; font-size:12px; color:var(--ink); background:rgba(42,36,56,.9); border:2px solid var(--line); border-radius:4px; padding:3px 8px; }
   #chatform input:focus { border-color:var(--work); outline:none; }
+  #chatform button { padding:2px 8px; }
+  body.compact #chatbar { width:calc(100% - 16px); min-width:0; }
   .bubble.chat { background:#fff; border-color:#2a2233; max-width:calc(80px * var(--s)); } .bubble.chat span { -webkit-line-clamp:3; } body.compact .bubble.chat .d { display:inline; }
   #toasts { position:fixed; left:50%; bottom:18px; transform:translateX(-50%); display:flex; flex-direction:column; gap:6px; align-items:center; }
   .toast { background:#fffdf6; color:#2a2233; border:2px solid #2a2233; border-radius:6px; padding:6px 12px; }
@@ -137,8 +144,8 @@
   <button id="style">캐릭터: 도트</button>
   <button id="sound">알림음 꺼짐</button>
 </header>
-<main><div id="stage"><canvas id="cv" width="480" height="300"></canvas><div id="labels"></div><button class="pan l" id="panL" title="왼쪽 보기">‹</button><button class="pan r" id="panR" title="오른쪽 보기">›</button></div>
-<div id="chatbar"><div id="chatlog"></div><form id="chatform"><input id="chatin" maxlength="120" placeholder="같은 방 사람들에게 한마디 (Enter 나 / 키로 바로 입력)" autocomplete="off"><button type="submit">보내기</button></form></div>
+<main><div id="stage"><canvas id="cv" width="480" height="300"></canvas><div id="labels"></div><button class="pan l" id="panL" title="왼쪽 보기">‹</button><button class="pan r" id="panR" title="오른쪽 보기">›</button>
+<div id="chatbar"><div id="chatlog"></div><form id="chatform"><input id="chatin" maxlength="120" placeholder="같은 방 사람들에게 한마디 (Enter 나 / 키로 바로 입력)" autocomplete="off"><button type="submit">보내기</button></form></div></div>
 <div id="list"></div></main>
 <aside id="panel"></aside>
 <div id="toasts"></div>
