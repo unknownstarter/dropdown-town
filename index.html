@@ -109,6 +109,12 @@
   #modal select, #modal textarea { width:100%; font:inherit; color:var(--ink); background:var(--bg); border:2px solid var(--line); border-radius:4px; padding:6px; }
   #modal textarea { height:110px; resize:vertical; }
   #modal .row { display:flex; justify-content:flex-end; gap:8px; margin-top:14px; }
+  #chatbar { width:100%; max-width:calc(480px * var(--s) + 8px); margin-top:6px; }
+  #chatlog { display:flex; flex-direction:column; gap:2px; margin-bottom:4px; font-size:11px; color:var(--dim); line-height:1.4; max-height:64px; overflow:auto; }
+  #chatlog b { font-weight:normal; color:var(--work); margin-right:4px; } #chatlog .mine b { color:var(--rest); }
+  #chatform { display:flex; gap:6px; } #chatform input { flex:1; font:inherit; color:var(--ink); background:var(--panel); border:2px solid var(--line); border-radius:4px; padding:4px 8px; }
+  #chatform input:focus { border-color:var(--work); outline:none; }
+  .bubble.chat { background:#fff; border-color:#2a2233; max-width:calc(80px * var(--s)); } .bubble.chat span { -webkit-line-clamp:3; } body.compact .bubble.chat .d { display:inline; }
   #toasts { position:fixed; left:50%; bottom:18px; transform:translateX(-50%); display:flex; flex-direction:column; gap:6px; align-items:center; }
   .toast { background:#fffdf6; color:#2a2233; border:2px solid #2a2233; border-radius:6px; padding:6px 12px; }
   #offline { display:none; position:fixed; top:60px; left:50%; transform:translateX(-50%); background:var(--help); color:#1b1726; padding:4px 12px; border-radius:4px; }
@@ -131,7 +137,9 @@
   <button id="style">캐릭터: 도트</button>
   <button id="sound">알림음 꺼짐</button>
 </header>
-<main><div id="stage"><canvas id="cv" width="480" height="300"></canvas><div id="labels"></div><button class="pan l" id="panL" title="왼쪽 보기">‹</button><button class="pan r" id="panR" title="오른쪽 보기">›</button></div><div id="list"></div></main>
+<main><div id="stage"><canvas id="cv" width="480" height="300"></canvas><div id="labels"></div><button class="pan l" id="panL" title="왼쪽 보기">‹</button><button class="pan r" id="panR" title="오른쪽 보기">›</button></div>
+<div id="chatbar"><div id="chatlog"></div><form id="chatform"><input id="chatin" maxlength="120" placeholder="같은 방 사람들에게 한마디 (/ 키로 바로 입력)" autocomplete="off"><button type="submit">보내기</button></form></div>
+<div id="list"></div></main>
 <aside id="panel"></aside>
 <div id="toasts"></div>
 <div id="modal"><div class="box"></div></div>
@@ -590,9 +598,10 @@ function refreshLabels(e) {
   let html = ''
   // .d 는 넓은 창에서만, .c 는 좁은 창에서만 보인다(좁은 창에서는 짧은 상태만 띄우고 자세한 내용은 카드 목록이 맡는다)
   if (e.zone === 'work') { const tk = s.phase === 'tool' ? toolKo(s.tool) : s.phase === 'thinking' ? '생각 중' : ''; html = (tk ? `<em>[${esc(tk)}]</em>` : '<em class="c">일하는 중</em>') + `<u class="d"> ${esc(s.detail || '')}</u>` }
+  else if (e.id === ME || s.kind === 'guest') { if (s.say && Date.now() - (s.sayAt || 0) < 9000) html = `<u class="d">${esc(s.say)}</u>` } // 채팅 말풍선은 9초 동안
   else if (isSub(e) && !e.path.length) { const tk = s.phase === 'tool' ? toolKo(s.tool) : '생각 중'; html = `<em>[${esc(tk)}]</em><u class="d"> ${esc((s.lastText || s.description || '').replace(/\s+/g, ' '))}</u>` }
   else if (e.zone === 'help') html = `<em class="c">답이 필요해요</em><u class="d">${esc(s.detail || '답을 기다리고 있어요')}</u>`
-  e.bubble.className = 'bubble' + (e.zone === 'help' ? ' help' : '') + (e.zone === 'work' && e.slot < 4 ? ' two' : '') + (isSub(e) ? ' sub' : '') // 윗줄 책상은 말풍선 위가 벽이라 두 줄까지 보여준다
+  e.bubble.className = 'bubble' + (e.zone === 'help' ? ' help' : '') + (e.zone === 'work' && e.slot < 4 ? ' two' : '') + (isSub(e) ? ' sub' : '') + (e.id === ME || s.kind === 'guest' ? ' chat' : '') // 윗줄 책상은 말풍선 위가 벽이라 두 줄까지 보여준다
   e.bubble.innerHTML = html ? `<span>${html}</span>` : ''
   e.bubble.dataset.empty = html ? '' : '1'
 }
@@ -724,7 +733,9 @@ function frame(t, manual) {
     e.tag.style.display = (quiet && nearId !== e.id && e.id !== ME) || offscreen ? 'none' : 'block' // 아바타와 그 옆 캐릭터의 이름표는 늘 보인다
     e.tag.style.left = (e.x + 6 - camX) * scale + 'px'
     e.tag.style.top = (seated ? e.y + 28.5 : e.y + 18) * scale + 'px' // 앉아 있으면 책상 앞면의 명패 자리
-    const show = !e.bubble.dataset.empty && !e.path.length && !offscreen
+    const chatting = (e.id === ME || e.data.kind === 'guest') && e.data.say && Date.now() - (e.data.sayAt || 0) < 9000
+    if ((e.id === ME || e.data.kind === 'guest') && e.bubble.dataset.empty === '' && !chatting) refreshLabels(e) // 9초가 지나면 말풍선을 거둔다
+    const show = !e.bubble.dataset.empty && (!e.path.length || chatting) && !offscreen
     e.bubble.style.display = show ? 'block' : 'none'
     if (show) { const half = e.bubble.offsetWidth / 2 + 2; e.bubble.style.left = Math.max(half, Math.min(view.w * scale - half, (e.x + 6 - camX) * scale)) + 'px'; e.bubble.style.top = (hy - (e.zone === 'help' ? 15 : 4)) * scale + 'px' }
   }
@@ -949,7 +960,29 @@ addEventListener('keydown', (ev) => {
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(ev.code)) { keys.add(ev.code); ev.preventDefault() }
   if ((ev.code === 'Enter' || ev.code === 'Space') && nearId) { ev.preventDefault(); selectEnt(nearId) }
   if (ev.code === 'Escape') closePanel()
+  if (ev.key === '/' ) { ev.preventDefault(); document.getElementById('chatin').focus() } // 슬래시로 채팅 입력
 })
+// 방 채팅: 보내면 내 아바타 위에 말풍선이 뜨고, 서버를 거쳐 같은 방 사람들에게도 보인다
+document.getElementById('chatform').onsubmit = (ev) => {
+  ev.preventDefault()
+  const input = document.getElementById('chatin'), text = input.value.trim()
+  if (!text) return input.blur()
+  const me = ensureAvatar()
+  me.data.say = text; me.data.sayAt = Date.now(); me.data.sayId = Math.random().toString(36).slice(2, 12)
+  refreshLabels(me); input.value = ''; input.blur()
+  lastPush = 0; pushAvatar(me, true)
+  addChatLine({ id: me.data.sayId, name: me.look.nick || OWNER, text, at: me.data.sayAt, mine: true })
+}
+const chatSeen = new Set()
+function addChatLine(m) {
+  if (!m.id || chatSeen.has(m.id)) return
+  chatSeen.add(m.id)
+  const log = document.getElementById('chatlog'), line = document.createElement('div')
+  line.className = m.mine ? 'mine' : ''; line.innerHTML = `<b>${esc(m.name)}</b>${esc(m.text)}`
+  log.append(line); while (log.children.length > 30) log.firstChild.remove(); log.scrollTop = log.scrollHeight
+}
+function syncChat(list) { for (const m of list || []) if (!chatSeen.has(m.id)) addChatLine({ ...m, mine: m.name === (ents.get(ME)?.look.nick || OWNER) }) }
+function clearChat() { document.getElementById('chatlog').innerHTML = ''; chatSeen.clear() }
 addEventListener('keyup', (ev) => keys.delete(ev.code))
 addEventListener('blur', () => keys.clear())
 // 터치: 살짝 두드리면 그 자리로 걷거나 캐릭터를 열고, 옆으로 끌면 카메라를 움직인다
@@ -1227,7 +1260,7 @@ document.getElementById('relayBtn').onclick = () => {
 let rooms = [], room = 0, teamState = { share: {}, peers: [] }, lastRoomSwitch = 0, lastTeamKey = ''
 function setRooms(team, mySessions, myAgents, myRelay) {
   teamState = team
-  rooms = [{ id: 'me', name: '내 사무실', ok: true, sessions: mySessions, agents: myAgents, relay: myRelay }, ...(team.peers || []).map((p) => ({ id: p.url, name: p.name || p.url, ok: p.ok, error: p.error, sessions: p.sessions || [], agents: p.agents || [], relay: p.relay || null, avatars: p.avatars || [] }))]
+  rooms = [{ id: 'me', name: '내 사무실', ok: true, sessions: mySessions, agents: myAgents, relay: myRelay }, ...(team.peers || []).map((p) => ({ id: p.url, name: p.name || p.url, ok: p.ok, error: p.error, sessions: p.sessions || [], agents: p.agents || [], relay: p.relay || null, avatars: p.avatars || [], chat: p.chat || [] }))]
   if (room >= rooms.length) room = 0
   const cur = rooms[room]
   renderRooms()
@@ -1235,6 +1268,7 @@ function setRooms(team, mySessions, myAgents, myRelay) {
   setAgents(room === 0 ? myAgents : cur.agents)
   sync(cur.ok ? cur.sessions : [])
   syncGuests(room === 0 ? team.visitors : cur.avatars)
+  syncChat(room === 0 ? team.chat : cur.chat)
   // 열어 둔 팀 창은 공유 상태나 동료 목록이 실제로 바뀌었을 때만, 그것도 입력 중이 아닐 때만 다시 그린다.
   // 매번 다시 그리면 입력 칸의 커서가 튕기고 복사 버튼이 눌리는 순간 바뀌어 버린다.
   const teamKey = JSON.stringify([team.share, (team.peers || []).map((p) => [p.url, p.name, p.ok, p.error])])
@@ -1263,6 +1297,7 @@ function switchRoom(i) {
   setAgents(room === 0 ? rooms[0].agents : cur.agents)
   sync(cur.ok ? cur.sessions : [])
   syncGuests(room === 0 ? teamState.visitors : cur.avatars)
+  clearChat(); syncChat(room === 0 ? teamState.chat : cur.chat)
   toast(room === 0 ? '내 사무실로 돌아왔어요' : cur.ok ? `‘${cur.name}’ 의 사무실이에요 (구경만 할 수 있어요)` : `‘${cur.name}’ 의 맥에 연결되지 않아요: ${cur.error || ''}`)
 }
 // 아바타 위치 주고받기. 내 위치는 내 서버에 알리고(움직일 때 250ms, 가만히 있을 때 3초), 서버가 지금 있는 방의 동료에게 전달한다.
@@ -1271,7 +1306,8 @@ function pushAvatar(me, moving) {
   if (DEMO || pushing || performance.now() - lastPush < (moving ? 250 : 3000)) return
   lastPush = performance.now(); pushing = true
   const l = me.look
-  fetch('/api/action/avatar', { method: 'POST', headers: { 'content-type': 'application/json', 'x-town-token': TOKEN }, body: JSON.stringify({ room: rooms[room]?.id || 'me', name: l.nick || OWNER, x: Math.round(me.x), y: Math.round(me.y), dir: me.dir, look: { body: l.body, hairStyle: l.hairStyle, outfit: l.outfit, acc: l.acc, accColor: l.accColor, nick: l.nick, hair: l.hair, skin: l.skin, shirt: l.shirt } }) }).catch(() => {}).finally(() => { pushing = false })
+  const fresh = me.data.say && Date.now() - (me.data.sayAt || 0) < 15000
+  fetch('/api/action/avatar', { method: 'POST', headers: { 'content-type': 'application/json', 'x-town-token': TOKEN }, body: JSON.stringify({ room: rooms[room]?.id || 'me', name: l.nick || OWNER, x: Math.round(me.x), y: Math.round(me.y), dir: me.dir, say: fresh ? me.data.say : '', sayAt: fresh ? me.data.sayAt : 0, sayId: fresh ? me.data.sayId : '', look: { body: l.body, hairStyle: l.hairStyle, outfit: l.outfit, acc: l.acc, accColor: l.accColor, nick: l.nick, hair: l.hair, skin: l.skin, shirt: l.shirt } }) }).catch(() => {}).finally(() => { pushing = false })
 }
 // 이 방에 있는 다른 사람들의 아바타(방 주인과 방문자). 새 위치로 걸어가고, 소식이 끊기면 사라진다.
 function syncGuests(list) {
@@ -1286,6 +1322,7 @@ function syncGuests(list) {
     g.data.owner = Boolean(a.owner)
     if (Math.hypot(a.x - g.x, a.y - g.y) > 1) g.path = [{ x: a.x, y: a.y }]
     g.dir = a.dir; g.spot = { x: a.x, y: a.y, face: a.dir }
+    g.data.say = a.say || ''; g.data.sayAt = a.sayAt || 0
     refreshLabels(g)
   }
   for (const e of ents.values()) if (e.data.kind === 'guest' && !seen.has(e.id)) { e.tag.remove(); e.bubble.remove(); ents.delete(e.id); if (selected === e.id) closePanel() }
