@@ -108,6 +108,7 @@ claude --bg "이 폴더에 뭐가 있는지 요약해줘"
 | 릴레이 중간에 끼어들기 | 위쪽 릴레이 표시를 누르면 관리 창이 열립니다. 아직 시작하지 않은 단계의 지시문을 고치거나 줄일 수 있고, "이 단계 끝나면 멈추기"를 누르면 다음 단계 전에 멈춥니다. 시작할 때 "단계마다 내가 확인하고 넘기기"를 켜 두면 매 단계 끝에 멈춰서, 다음 단계로 넘길 결과를 직접 고친 뒤 넘길 수 있습니다. |
 | 세션끼리 주고받는 대화 보기 | 세션이 다른 세션이나 조수와 메시지를 주고받으면 종이비행기가 날아가고, 세션 사이에는 잠시 점선이 이어집니다. 캐릭터를 누르면 "최근 대화"에 주고받은 내용이 나옵니다. |
 | 캐릭터 꾸미기 | 캐릭터를 누르면 아래쪽에 별명, 몸, 머리, 옷, 장식(왕관, 고양이 귀, 리본)과 장식 색을 바꾸는 칸이 있습니다. |
+| 내 캐릭터로 사무실 돌아다니기 | 별(★) 명찰을 단 캐릭터가 나입니다. 방향키나 WASD 로 걷고, 빈 바닥을 누르거나(휴대폰에서는 두드리거나) 그리로 걸어갑니다. 세션 캐릭터 옆에 서면 이름표가 켜지고 Enter 나 스페이스로 정보가 열립니다. 위치와 꾸민 모습은 이 창에 저장됩니다. 세션 캐릭터는 위치가 곧 상태라서 손으로 옮길 수 없습니다. |
 | 화면 옆에 세로로 붙여 두기 | 메뉴 "보기"의 "화면 왼쪽 3분의 1에 붙이기"(⌘[)나 "오른쪽"(⌘]). 창이 좁아지면 사무실을 줄이지 않고 크게 보여주면서, 카메라가 사람이 있는 쪽을 천천히 오갑니다. 누가 호출 벨을 누르면 그쪽을 비추고, 그림을 끌거나 양옆 화살표를 눌러 직접 움직일 수도 있습니다. 아래에는 세션 카드 목록이 나옵니다. "항상 위에 두기"(⌘T)와 같이 쓰면 좋습니다. |
 | 코드 편집기 옆에 작게 띄우기 | 메뉴 "보기"의 "작은 창으로"(⌘1). |
 | 알림음 켜기 | 오른쪽 위 "알림음" 버튼. 세션이 나를 찾거나 일을 끝내면 소리가 납니다. |
@@ -271,6 +272,7 @@ claude --bg "Summarize what is in this folder"
 | Step into a running relay | Click the relay chip at the top to open the relay panel. Edit or trim the steps that have not started yet, or ask it to pause before the next step. Start a relay with "단계마다 내가 확인하고 넘기기" checked and it pauses after every step so you can edit the hand-off text before it goes on. |
 | See sessions talking to each other | When a session exchanges messages with another session or a helper, a paper plane flies and a dotted line briefly links the two. Click a character to read the "최근 대화" list. |
 | Dress up a character | Click it and use the fields at the bottom of the panel. |
+| Walk around as yourself | The character with the ★ tag is you. Move with the arrow keys or WASD, or click (tap on a phone) an empty spot on the floor to walk there. Stand next to a session character and press Enter or Space to open its panel. Your position and look are saved in this window. Session characters cannot be moved by hand, since their position is their status. |
 | Dock it to the side of your screen | View menu: snap to the left third (⌘[) or right third (⌘]). In a narrow window the office stays large and a camera slowly pans between the sides where characters are. It jumps to the bell when someone needs you, and you can drag the scene or use the side arrows. A list of session cards sits below. Works well with Always on top (⌘T). |
 | Keep it small beside your editor | View menu: Compact window (⌘1). |
 

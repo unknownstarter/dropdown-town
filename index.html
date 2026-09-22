@@ -58,6 +58,7 @@
     background:rgba(20,16,30,.82); border-radius:3px; max-width:calc(55px * var(--s)); overflow:hidden; text-overflow:ellipsis; }
   .tag i { font-style:normal; color:var(--work); margin-right:4px; }
   .tag.sel { outline:2px solid var(--work); }
+  .tag.near { outline:2px solid #fff; display:block !important; }
   .tag.mini { font-size:9px; padding:0 3px; max-width:calc(36px * var(--s)); }
   .bubble { position:absolute; transform:translate(-50%,-100%); width:max-content; max-width:calc(60px * var(--s)); font-size:11px; line-height:1.35;
     background:#fffdf6; color:#2a2233; border:2px solid #2a2233; border-radius:6px; padding:3px 6px; }
@@ -209,7 +210,7 @@ function defaultLook(s) {
   return {
     hair: HAIRS[h % HAIRS.length], skin: SKINS[(h >>> 4) % SKINS.length],
     shirt: hsl2hex((h >>> 8) % 360, 0.55, 0.55),
-    acc: s.kind === 'interactive' ? 'crown' : accKeys[(h >>> 16) % accKeys.length], nick: '',
+    acc: s.kind === 'interactive' || s.kind === 'me' ? 'crown' : accKeys[(h >>> 16) % accKeys.length], nick: '',
     body: hash(s.id + 'body') % 6, outfit: s.kind === 'sub' ? 13 : hash(s.id + 'outfit') % 11, hairStyle: hash(s.id + 'hair') % 12, // 도트 캐릭터용(모자 달린 옷은 직접 고를 때만)
   }
 }
@@ -578,7 +579,8 @@ function refreshLabels(e) {
   const s = e.data, name = e.look.nick || s.name
   const extra = !isSub(e) && s.subagents.length > 2 ? ` +${s.subagents.length - 2}` : ''
   e.tag.classList.toggle('mini', isSub(e))
-  e.tag.innerHTML = isSub(e) ? `${s.role ? '' : '<i>조수</i>'}${esc(name)}` : `<i>${s.relay ? `릴레이 ${s.relay.step}/${s.relay.total}` : 'Lv.' + level(s.tokens)}</i>${esc(name)}${extra}`
+  e.tag.classList.toggle('near', nearId === e.id)
+  e.tag.innerHTML = e.id === ME ? `<i>★</i>${esc(name)}` : isSub(e) ? `${s.role ? '' : '<i>조수</i>'}${esc(name)}` : `<i>${s.relay ? `릴레이 ${s.relay.step}/${s.relay.total}` : 'Lv.' + level(s.tokens)}</i>${esc(name)}${extra}`
   e.tag.classList.toggle('sel', selected === e.id)
   let html = ''
   // .d 는 넓은 창에서만, .c 는 좁은 창에서만 보인다(좁은 창에서는 짧은 상태만 띄우고 자세한 내용은 카드 목록이 맡는다)
@@ -640,6 +642,7 @@ function sync(list) {
     }
     lastSeenMsg.set(s.id, Math.max(seenAt, ...talks.map((t) => t.at)))
   }
+  seen.add(ME); ensureAvatar()
   for (const e of ents.values()) if (!seen.has(e.id) && !e.leaving) leave(e)
   const preselect = firstLoad && new URLSearchParams(location.search).get('select') // 주소의 ?select=세션id 로 그 캐릭터 패널을 연 채 시작한다
   if (preselect && ents.has(preselect)) { selected = preselect; renderPanel() }
@@ -664,6 +667,7 @@ function step(e, dt) {
   if (e.leaving && !e.path.length) { e.tag.remove(); e.bubble.remove(); ents.delete(e.id); if (selected === e.id) closePanel() }
 }
 function poseOf(e) {
+  if (e.id === ME) return e.moving || e.path.length ? 'walk' : 'chill'
   if (e.path.length) return 'walk'
   if (isSub(e)) return 'assist'
   if (e.zone === 'work') return 'type'
@@ -693,6 +697,7 @@ function frame(t, manual) {
 
   for (const e of ents.values()) {
     step(e, dt)
+    if (e.id === ME) stepAvatar(e, dt)
     const pose = poseOf(e)
     const seated = e.zone === 'work' && !e.path.length && e.slot < 8
     const sprite = useSprites(), sink = sprite && seated ? 6 : 0 // 앉으면 다리가 책상 뒤로 가려지게 조금 내린다
@@ -710,7 +715,7 @@ function frame(t, manual) {
     // 이름표와 말풍선 위치. 휴게실 캐릭터와 조수는 가구를 가리지 않도록 마우스를 올렸을 때만 이름표를 보여준다.
     const quiet = (e.zone === 'rest' || (compact && scale < 1.5)) && hovered !== e.id && selected !== e.id
     const offscreen = e.x + 12 < camX || e.x > camX + view.w
-    e.tag.style.display = quiet || offscreen ? 'none' : 'block'
+    e.tag.style.display = (quiet && nearId !== e.id && e.id !== ME) || offscreen ? 'none' : 'block' // 아바타와 그 옆 캐릭터의 이름표는 늘 보인다
     e.tag.style.left = (e.x + 6 - camX) * scale + 'px'
     e.tag.style.top = (seated ? e.y + 28.5 : e.y + 18) * scale + 'px' // 앉아 있으면 책상 앞면의 명패 자리
     const show = !e.bubble.dataset.empty && !e.path.length && !offscreen
@@ -777,6 +782,7 @@ const STATE_KO = { work: ['일하는 중', 'var(--work)'], help: [`${OWNER} 기�
 function renderPanel(full = true) {
   const e = ents.get(selected); if (!e) return
   if (isSub(e)) return renderSubPanel(e)
+  if (e.id === ME) return renderMePanel(e)
   const s = e.data, [label, color] = STATE_KO[e.zone] || ['퇴근 중', 'var(--dim)']
   const links = s.links.slice(-8).map((l) => `<a href="${esc(l.href)}" target="_blank" rel="noreferrer">${esc(l.kind === 'pr' ? 'PR #' + l.id : l.id)}</a>`).join(' ')
   const info = `
@@ -866,9 +872,96 @@ cv.addEventListener('mousemove', (ev) => { const e = pick(ev); hovered = e ? e.i
 cv.addEventListener('click', (ev) => {
   if (performance.now() - justDragged < 250) return // 끌어서 움직인 직후의 클릭은 무시
   const e = pick(ev), prev = ents.get(selected)
-  if (!e) return closePanel()
-  selectEnt(e.id)
+  if (e) return selectEnt(e.id)
+  closePanel()
+  const r = cv.getBoundingClientRect()
+  walkAvatarTo((ev.clientX - r.left) / scale + Math.round(view.x), (ev.clientY - r.top) / scale) // 빈 바닥을 누르면 아바타가 그리로 걸어간다
 })
+
+/* ---------- 아바타: 사무실을 돌아다니는 나 ---------- */
+// 세션 캐릭터는 위치가 곧 상태라 손으로 옮기지 않는다. 대신 사람마다 아바타 하나를 두고 방향키(또는 WASD), 클릭, 터치로 움직인다.
+// 세션 캐릭터 옆에 가면 이름표가 켜지고, Enter 나 스페이스로 그 캐릭터의 정보를 연다. 위치는 이 창에 저장된다.
+const ME = 'me', AVATAR_SPEED = 75, NEAR = 26
+const FLOORS = [{ x0: 4, x1: 476, y0: 56, y1: 172 }, { x0: 4, x1: 476, y0: 216, y1: 292 }, { x0: 334, x1: 356, y0: 160, y1: 230 }] // 작업실, 휴게실, 두 방 사이 문틈
+const onFloor = (x, y) => FLOORS.some((f) => x >= f.x0 && x <= f.x1 && y >= f.y0 && y <= f.y1)
+const keys = new Set()
+let nearId = null
+function ensureAvatar() {
+  if (ents.has(ME)) return ents.get(ME)
+  let pos = { x: 300, y: 250 }
+  try { pos = { ...pos, ...JSON.parse(localStorage.getItem('town.me.pos') || '{}') } } catch {}
+  if (!onFloor(pos.x, pos.y)) pos = { x: 300, y: 250 }
+  const me = makeEnt({ id: ME, kind: 'me', name: OWNER, state: 'idle', detail: '', intent: '', tokens: 0, subagents: [], links: [], talks: [] })
+  me.zone = 'me'; me.x = pos.x; me.y = pos.y; me.spot = { x: pos.x, y: pos.y, face: 'down', room: pos.y > 190 ? 'lounge' : 'work' }
+  refreshLabels(me)
+  return me
+}
+function walkAvatarTo(x, y) {
+  const me = ents.get(ME)
+  if (!me || !onFloor(x, y)) return
+  const from = { x: me.x, y: me.y, aisle: null, room: me.y > 190 ? 'lounge' : 'work' }, to = { x: x - 6, y: y - 10, aisle: null, room: y > 190 ? 'lounge' : 'work', face: me.dir }
+  me.path = from.room === to.room ? [{ x: to.x, y: to.y }] : route(from, to) // 다른 방이면 문틈으로 돌아간다
+  me.spot = to
+}
+function stepAvatar(me, dt) {
+  const dx = (keys.has('ArrowRight') || keys.has('KeyD') ? 1 : 0) - (keys.has('ArrowLeft') || keys.has('KeyA') ? 1 : 0)
+  const dy = (keys.has('ArrowDown') || keys.has('KeyS') ? 1 : 0) - (keys.has('ArrowUp') || keys.has('KeyW') ? 1 : 0)
+  me.moving = dx !== 0 || dy !== 0
+  if (me.moving) {
+    me.path = []
+    const len = Math.hypot(dx, dy), nx = me.x + (dx / len) * AVATAR_SPEED * dt, ny = me.y + (dy / len) * AVATAR_SPEED * dt
+    if (onFloor(nx + 6, me.y + 10)) me.x = nx // 벽에는 막히되 벽을 따라 미끄러지게 축을 따로 본다
+    if (onFloor(me.x + 6, ny + 10)) me.y = ny
+    me.dir = Math.abs(dx) >= Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up'
+    me.spot = { x: me.x, y: me.y, face: me.dir, room: me.y > 190 ? 'lounge' : 'work' }
+  }
+  if ((me.moving || me.path.length) && compact) focusOn(me, 2500)
+  if (me.moving || me.path.length) me.dirty = true
+  else if (me.dirty) { me.dirty = false; try { localStorage.setItem('town.me.pos', JSON.stringify({ x: Math.round(me.x), y: Math.round(me.y) })) } catch {} }
+  // 가까운 캐릭터: 이름표를 켜고 Enter 로 열 수 있게 한다
+  let best = null, bestD = NEAR
+  for (const e of ents.values()) { if (e === me || e.leaving) continue; const d = Math.hypot(e.x - me.x, e.y - me.y); if (d < bestD) { best = e; bestD = d } }
+  const id = best ? best.id : null
+  if (id !== nearId) { const prev = ents.get(nearId); nearId = id; if (prev) refreshLabels(prev); if (best) refreshLabels(best) }
+}
+const typing = () => { const a = document.activeElement; return a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT') || modal.style.display === 'flex' }
+addEventListener('keydown', (ev) => {
+  if (typing()) return
+  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(ev.code)) { keys.add(ev.code); ev.preventDefault() }
+  if ((ev.code === 'Enter' || ev.code === 'Space') && nearId) { ev.preventDefault(); selectEnt(nearId) }
+  if (ev.code === 'Escape') closePanel()
+})
+addEventListener('keyup', (ev) => keys.delete(ev.code))
+addEventListener('blur', () => keys.clear())
+// 터치: 살짝 두드리면 그 자리로 걷거나 캐릭터를 열고, 옆으로 끌면 카메라를 움직인다
+let touch = null
+cv.addEventListener('touchstart', (ev) => { const t = ev.touches[0]; touch = { x0: t.clientX, y0: t.clientY, cam0: view.x, moved: false } }, { passive: true })
+cv.addEventListener('touchmove', (ev) => {
+  if (!touch) return
+  const t = ev.touches[0], dx = t.clientX - touch.x0
+  if (Math.abs(dx) > 8 || Math.abs(t.clientY - touch.y0) > 8) touch.moved = true
+  if (touch.moved && maxPan() > 0) { ev.preventDefault(); panTo(touch.cam0 - dx / scale, 30000); view.x = view.target }
+}, { passive: false })
+cv.addEventListener('touchend', (ev) => {
+  if (!touch) return
+  const moved = touch.moved, t = ev.changedTouches[0]; touch = null
+  if (moved) { justDragged = performance.now(); return }
+  ev.preventDefault()
+  const fake = { clientX: t.clientX, clientY: t.clientY }, e = pick(fake)
+  if (e) return selectEnt(e.id)
+  closePanel()
+  const r = cv.getBoundingClientRect()
+  walkAvatarTo((t.clientX - r.left) / scale + Math.round(view.x), (t.clientY - r.top) / scale)
+}, { passive: false })
+function renderMePanel(e) {
+  panel.innerHTML = `<button class="x">×</button><h2></h2>
+    <p class="hint" style="margin:0 0 6px">사무실을 돌아다니는 내 캐릭터예요. 방향키나 WASD 로 걷고, 빈 바닥을 누르면 그리로 갑니다. 세션 캐릭터 옆에 서서 Enter 를 누르면 정보가 열려요.</p>
+    ${dressHtml(e.look, OWNER)}`
+  panel.querySelector('h2').textContent = e.look.nick || OWNER
+  panel.style.display = 'block'
+  panel.querySelector('.x').onclick = closePanel
+  bindDress(ME, { kind: 'me' }, () => { refreshLabels(e); panel.querySelector('h2').textContent = e.look.nick || OWNER }, () => renderPanel())
+}
 
 /* ---------- 세션 카드 목록 (좁은 창) ---------- */
 const listEl = document.getElementById('list')
@@ -881,7 +974,7 @@ function selectEnt(id) {
 }
 function renderList(force) {
   if (!compact) { listEl.innerHTML = ''; listEl.dataset.key = ''; return }
-  const all = [...ents.values()].filter((e) => !isSub(e) && !e.leaving)
+  const all = [...ents.values()].filter((e) => !isSub(e) && !e.leaving && e.id !== ME)
   const groups = [['help', `${OWNER} 호출 벨`, 'var(--help)'], ['work', '작업실', 'var(--work)'], ['rest', '휴게실', 'var(--rest)']]
   const key = JSON.stringify([selected, style, spritesReady, Math.floor(Date.now() / 60000), all.map((e) => [e.id, e.zone, e.look.nick, e.look.body, e.look.outfit, e.look.hairStyle, e.data.name, e.data.detail, e.data.phase, e.data.tool, e.data.tokens, e.data.subagents.map((a) => a.type)])])
   if (!force && listEl.dataset.key === key) return
