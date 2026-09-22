@@ -5,7 +5,12 @@ import WebKit
 let port = 4777
 let pageURL = URL(string: "http://127.0.0.1:\(port)/")!
 
-final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
+  func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+    guard message.name == "copy", let text = message.body as? String else { return }
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(text, forType: .string)
+  }
   var window: NSWindow!
   var webView: WKWebView!
   var server: Process?
@@ -17,7 +22,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     startServer()
     buildMenu()
 
-    webView = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
+    // 화면의 "복사" 버튼이 앱에 글자를 넘기면 앱이 직접 클립보드에 쓴다(웹뷰 안의 복사 API 는 조용히 실패할 수 있다).
+    let webConfig = WKWebViewConfiguration()
+    webConfig.userContentController.add(self, name: "copy")
+    webView = WKWebView(frame: .zero, configuration: webConfig)
     webView.navigationDelegate = self
     webView.uiDelegate = self
 
@@ -80,6 +88,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     appMenu.addItem(.separator())
     appMenu.addItem(withTitle: "Dropdown Town 종료", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
     appItem.submenu = appMenu
+
+    // 편집 메뉴가 있어야 창 안에서 ⌘C, ⌘V, ⌘A 같은 단축키가 동작한다(맥 앱의 규칙).
+    let editItem = NSMenuItem(); main.addItem(editItem)
+    let editMenu = NSMenu(title: "편집")
+    editMenu.addItem(withTitle: "실행 취소", action: Selector(("undo:")), keyEquivalent: "z")
+    editMenu.addItem(withTitle: "실행 복귀", action: Selector(("redo:")), keyEquivalent: "Z")
+    editMenu.addItem(.separator())
+    editMenu.addItem(withTitle: "오려두기", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+    editMenu.addItem(withTitle: "복사", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+    editMenu.addItem(withTitle: "붙여넣기", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+    editMenu.addItem(withTitle: "모두 선택", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+    editItem.submenu = editMenu
 
     let viewItem = NSMenuItem(); main.addItem(viewItem)
     let viewMenu = NSMenu(title: "보기")
