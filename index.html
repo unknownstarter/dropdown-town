@@ -867,6 +867,7 @@ function renderSubPanel(e) {
 function copyText(text, btn) {
   const label = btn.textContent, done = () => { btn.textContent = '복사됨'; setTimeout(() => { if (btn.isConnected) btn.textContent = label }, 1500) }
   const failed = () => { toast('복사하지 못했어요. 글자를 드래그해서 직접 복사해 주세요.') }
+  if (window.webkit?.messageHandlers?.copy) { try { window.webkit.messageHandlers.copy.postMessage(text); return done() } catch {} } // 맥 앱 안에서는 앱이 클립보드에 쓴다
   let ok = false
   try {
     const ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', ''); ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none'
